@@ -1161,25 +1161,6 @@
             recalculateAndRender();
         }
 
-        function adjustTarget(delta) {
-            const current = parseFloat(appState.targetWeight) || 0;
-            const next = Math.max(0, Math.round((current + delta) * 100) / 100);
-            appState.targetWeight = next;
-            appState.selectedAlternativeIndex = 0;
-            document.getElementById('targetInput').value = next;
-            saveState();
-            recalculateAndRender();
-        }
-
-        function resetTarget() {
-            const base = appState.tareWeight || 0;
-            appState.targetWeight = base;
-            appState.selectedAlternativeIndex = 0;
-            document.getElementById('targetInput').value = base;
-            saveState();
-            recalculateAndRender();
-        }
-
         function setLoadMode(mode) {
             appState.loadMode = mode;
             appState.selectedAlternativeIndex = 0;
@@ -1207,37 +1188,6 @@
 
             saveState();
             recalculateAndRender();
-        }
-
-        function setTare(weight) {
-            appState.tareWeight = weight;
-            appState.selectedAlternativeIndex = 0;
-            document.getElementById('customTareInput').value = '';
-            updateTareButtonsUI(weight);
-            saveState();
-            recalculateAndRender();
-        }
-
-        function setCustomTare(val) {
-            const num = parseFloat(val);
-            const weight = isNaN(num) ? 0 : Math.max(0, num);
-            appState.tareWeight = weight;
-            appState.selectedAlternativeIndex = 0;
-            updateTareButtonsUI(null);
-            saveState();
-            recalculateAndRender();
-        }
-
-        function updateTareButtonsUI(activePreset) {
-            document.getElementById('tareDisplayLabel').textContent = `${formatKg(appState.tareWeight)} kg`;
-            document.querySelectorAll('.tare-btn').forEach(btn => {
-                const btnVal = Number(btn.dataset.tare);
-                if (activePreset !== null && btnVal === activePreset) {
-                    btn.className = 'tare-btn py-2.5 rounded-xl font-mono text-xs font-extrabold border transition active:scale-95 bg-gym-accent text-black border-gym-accent';
-                } else {
-                    btn.className = 'tare-btn py-2.5 rounded-xl font-mono text-xs font-extrabold border transition active:scale-95 bg-gym-elevated text-zinc-300 border-gym-border';
-                }
-            });
         }
 
         function selectAlternative(index) {
