@@ -1,0 +1,1301 @@
+<!DOCTYPE html>
+<html lang="it" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PlateLoad Pro — Calcolatore Dischi</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* Ottimizzazioni touch e scrollbar */
+        * {
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+        body {
+            background-color: #09090b;
+            color: #f4f4f5;
+            overscroll-behavior-y: none;
+        }
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* Animazione fluida per i dischi sul bilanciere */
+        @keyframes slideInPlate {
+            from { opacity: 0; transform: scaleY(0.7) translateX(-6px); }
+            to { opacity: 1; transform: scaleY(1) translateX(0); }
+        }
+        .plate-anim {
+            animation: slideInPlate 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col max-w-lg mx-auto bg-gym-bg text-zinc-100 selection:bg-gym-accent selection:text-black pb-24">
+
+    <!-- HEADER COMPATTO -->
+    <header class="sticky top-0 z-30 bg-gym-bg/90 backdrop-blur-md border-b border-gym-border px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-gym-accent text-black flex items-center justify-center font-black text-lg shadow-lg shadow-gym-accent/20">
+                KG
+            </div>
+            <div>
+                <h1 class="font-extrabold text-base tracking-tight leading-none text-white">PlateLoad <span class="text-gym-accent">PRO</span></h1>
+                <p class="text-[11px] text-zinc-400 font-medium mt-0.5" id="inventorySummaryBadge">Inventario attivo</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <button onclick="openPwaModal()" class="p-2.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-zinc-300 active:scale-95 transition" title="Salva come App">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                </svg>
+            </button>
+            <button onclick="switchTab('inventory')" id="headerInvBtn" class="px-3.5 py-2 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-white flex items-center gap-1.5 active:scale-95 transition">
+                <svg class="w-4 h-4 text-gym-accent" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+                </svg>
+                <span>I Miei Pesi</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- NAVIGAZIONE TAB (Calcolatore vs Inventario) -->
+    <nav class="px-4 pt-3">
+        <div class="grid grid-cols-2 p-1 bg-gym-card rounded-2xl border border-gym-border">
+            <button id="tabBtnCalc" onclick="switchTab('calc')" class="py-2.5 rounded-xl text-sm font-extrabold transition-all bg-gym-accent text-black shadow-md">
+                Calcola Carico
+            </button>
+            <button id="tabBtnInv" onclick="switchTab('inventory')" class="py-2.5 rounded-xl text-sm font-bold transition-all text-zinc-400 hover:text-white">
+                Inventario Dischi (<span id="totalPlatesCount">0</span>)
+            </button>
+        </div>
+    </nav>
+
+    <!-- ========================================== -->
+    <!-- SEZIONE 1: CALCOLATORE                     -->
+    <!-- ========================================== -->
+    <main id="viewCalc" class="px-4 pt-4 space-y-4 flex-1">
+
+        <!-- CARD INPUT PESO TARGET -->
+        <section class="bg-gym-card border border-gym-border rounded-3xl p-4 shadow-xl">
+            <div class="flex items-center justify-between mb-2">
+                <span id="targetInputLabel" class="text-xs font-bold uppercase tracking-wider text-zinc-400">Peso Totale Desiderato</span>
+                <button onclick="resetTarget()" class="text-xs font-semibold text-zinc-400 hover:text-gym-accent px-2 py-1 rounded-lg bg-gym-elevated active:scale-95 transition">
+                    Azzera
+                </button>
+            </div>
+
+            <!-- Controllo numerico gigante -->
+            <div class="flex items-center justify-between gap-2 my-2">
+                <button onclick="adjustTarget(-2.5)" class="w-14 h-16 rounded-2xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border flex flex-col items-center justify-center active:scale-95 transition select-none">
+                    <span class="text-lg font-black text-white leading-none">-2.5</span>
+                    <span class="text-[10px] text-zinc-400 font-bold mt-1">KG</span>
+                </button>
+
+                <div class="flex-1 relative flex items-center justify-center bg-black/50 border-2 border-gym-border focus-within:border-gym-accent rounded-2xl h-16 px-3 transition">
+                    <input type="number" id="targetInput" step="0.25" min="0" max="1500" value="80" inputmode="decimal"
+                        oninput="onTargetInput(this.value)"
+                        class="w-full bg-transparent text-center font-mono text-4xl font-extrabold text-white focus:outline-none">
+                    <span class="text-sm font-extrabold text-zinc-500 ml-1">KG</span>
+                </div>
+
+                <button onclick="adjustTarget(2.5)" class="w-14 h-16 rounded-2xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border flex flex-col items-center justify-center active:scale-95 transition select-none">
+                    <span class="text-lg font-black text-gym-accent leading-none">+2.5</span>
+                    <span class="text-[10px] text-zinc-400 font-bold mt-1">KG</span>
+                </button>
+            </div>
+
+            <!-- Tasti rapidi di incremento fine -->
+            <div class="grid grid-cols-4 gap-2 mt-3">
+                <button onclick="adjustTarget(-5)" class="py-2 rounded-xl bg-gym-elevated/70 hover:bg-gym-elevated border border-gym-border/70 font-mono text-xs font-bold text-zinc-300 active:scale-95 transition">-5 kg</button>
+                <button onclick="adjustTarget(-1)" class="py-2 rounded-xl bg-gym-elevated/70 hover:bg-gym-elevated border border-gym-border/70 font-mono text-xs font-bold text-zinc-300 active:scale-95 transition">-1 kg</button>
+                <button onclick="adjustTarget(1)" class="py-2 rounded-xl bg-gym-elevated/70 hover:bg-gym-elevated border border-gym-border/70 font-mono text-xs font-bold text-zinc-300 active:scale-95 transition">+1 kg</button>
+                <button onclick="adjustTarget(5)" class="py-2 rounded-xl bg-gym-elevated/70 hover:bg-gym-elevated border border-gym-border/70 font-mono text-xs font-bold text-gym-accent active:scale-95 transition">+5 kg</button>
+            </div>
+        </section>
+
+        <!-- MODALITÀ ATTREZZO & TARA -->
+        <section class="bg-gym-card border border-gym-border rounded-3xl p-4 space-y-3.5">
+            <!-- Tipo di carico: Bilanciere, Manubrio Singolo, Coppia Manubri, Perno Singolo -->
+            <div>
+                <label class="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">Attrezzo da Caricare</label>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="modeBarbell" onclick="setEquipment('barbell')" class="equip-btn p-3 rounded-2xl border-2 border-gym-accent bg-gym-accent/10 text-left transition active:scale-[0.98]">
+                        <div class="flex items-center justify-between">
+                            <span class="font-extrabold text-sm text-white flex items-center gap-1.5">
+                                <svg class="w-4 h-4 text-gym-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
+                                    <path d="M2 12h20M6 7v10M18 7v10M4 9v6M20 9v6"/>
+                                </svg>
+                                Bilanciere
+                            </span>
+                            <span class="equip-badge text-[10px] font-black px-2 py-0.5 rounded-full bg-gym-accent text-black">2 LATI</span>
+                        </div>
+                        <p class="text-[11px] text-zinc-400 mt-1">1 bilanciere a coppie</p>
+                    </button>
+
+                    <button id="modeDumbbellSingle" onclick="setEquipment('dumbbell_single')" class="equip-btn p-3 rounded-2xl border-2 border-gym-border bg-gym-elevated/50 text-left transition active:scale-[0.98]">
+                        <div class="flex items-center justify-between">
+                            <span class="font-extrabold text-sm text-zinc-300 flex items-center gap-1.5">
+                                <svg class="w-4 h-4 text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
+                                    <path d="M7 12h10M7 8v8M17 8v8M5 9.5v5M19 9.5v5"/>
+                                </svg>
+                                Manubrio
+                            </span>
+                            <span class="equip-badge text-[10px] font-black px-2 py-0.5 rounded-full bg-zinc-700 text-zinc-200">1 PZ</span>
+                        </div>
+                        <p class="text-[11px] text-zinc-400 mt-1">Singolo (2 lati a coppie)</p>
+                    </button>
+
+                    <button id="modeDumbbellPair" onclick="setEquipment('dumbbell_pair')" class="equip-btn p-3 rounded-2xl border-2 border-gym-border bg-gym-elevated/50 text-left transition active:scale-[0.98]">
+                        <div class="flex items-center justify-between">
+                            <span class="font-extrabold text-sm text-zinc-300 flex items-center gap-1.5">
+                                <svg class="w-4 h-4 text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
+                                    <path d="M4 8h6M4 5.5v5M10 5.5v5M14 16h6M14 13.5v5M20 13.5v5"/>
+                                </svg>
+                                Coppia Man.
+                            </span>
+                            <span class="equip-badge text-[10px] font-black px-2 py-0.5 rounded-full bg-zinc-700 text-zinc-200">× 2</span>
+                        </div>
+                        <p class="text-[11px] text-zinc-400 mt-1">2 manubri uguali (4 lati)</p>
+                    </button>
+
+                    <button id="modeSinglePin" onclick="setEquipment('single_pin')" class="equip-btn p-3 rounded-2xl border-2 border-gym-border bg-gym-elevated/50 text-left transition active:scale-[0.98]">
+                        <div class="flex items-center justify-between">
+                            <span class="font-extrabold text-sm text-zinc-300 flex items-center gap-1.5">
+                                <svg class="w-4 h-4 text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
+                                    <path d="M12 4v16M8 14h8M9 17h6"/>
+                                </svg>
+                                Perno / Dip
+                            </span>
+                            <span class="equip-badge text-[10px] font-black px-2 py-0.5 rounded-full bg-zinc-700 text-zinc-200">1 LATO</span>
+                        </div>
+                        <p class="text-[11px] text-zinc-400 mt-1">Macchina o cintura (anche dispari)</p>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tara / Peso Attrezzo Vuoto (dinamica per attrezzo) -->
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <label id="tareTitleLabel" class="text-xs font-bold uppercase tracking-wider text-zinc-400">Peso Bilanciere Vuoto (Tara)</label>
+                    <span class="text-xs font-mono font-bold text-gym-accent" id="tareDisplayLabel">20 kg</span>
+                </div>
+                <div class="grid grid-cols-5 gap-1.5" id="tareButtonsGrid">
+                    <!-- Pulsanti tara generati dinamicamente per Bilanciere vs Manubrio vs Perno -->
+                </div>
+            </div>
+        </section>
+
+        <!-- RISULTATO DEL CALCOLO -->
+        <section id="resultSection" class="bg-gym-card border border-gym-border rounded-3xl p-4 shadow-2xl space-y-4">
+            <!-- Banner Stato (Esatto vs Approssimato vs Impossibile) -->
+            <div id="statusBanner" class="rounded-2xl p-3 flex items-start gap-3 bg-emerald-500/10 border border-emerald-500/30">
+                <div id="statusIcon" class="w-6 h-6 rounded-full bg-emerald-500 text-black flex items-center justify-center shrink-0 mt-0.5 font-black text-xs">✓</div>
+                <div class="flex-1 min-w-0">
+                    <h2 id="statusTitle" class="text-sm font-extrabold text-emerald-400">Peso Esatto Raggiunto</h2>
+                    <p id="statusSubtitle" class="text-xs text-zinc-300 mt-0.5">Combinazione ottimale con i tuoi dischi disponibili.</p>
+                </div>
+            </div>
+
+            <!-- Alternative di approssimazione (visibile solo se non esatto) -->
+            <div id="alternativesBox" class="hidden space-y-2">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Opzioni più vicine disponibili:</p>
+                <div id="alternativesList" class="grid grid-cols-1 gap-2"></div>
+            </div>
+
+            <!-- Riepilogo Numerico Gigante -->
+            <div class="grid grid-cols-3 gap-2 bg-black/40 rounded-2xl p-3 border border-gym-border/80 text-center">
+                <div>
+                    <span id="summaryTargetLabel" class="block text-[10px] font-bold uppercase text-zinc-500">Target</span>
+                    <span id="summaryTarget" class="font-mono text-lg font-extrabold text-zinc-300">80 kg</span>
+                </div>
+                <div class="border-x border-gym-border">
+                    <span id="summaryAchievedLabel" class="block text-[10px] font-bold uppercase text-zinc-400">Raggiunto</span>
+                    <span id="summaryAchieved" class="font-mono text-2xl font-black text-gym-accent">80 kg</span>
+                </div>
+                <div>
+                    <span class="block text-[10px] font-bold uppercase text-zinc-500">Scarto</span>
+                    <span id="summaryDiff" class="font-mono text-lg font-extrabold text-emerald-400">0 kg</span>
+                </div>
+            </div>
+
+            <!-- Badge Extra per Coppia Manubri (Peso totale complessivo dei 2 manubri) -->
+            <div id="pairTotalBanner" class="hidden rounded-2xl px-3.5 py-2.5 bg-gym-elevated/80 border border-gym-border flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="px-2 py-0.5 rounded-md bg-gym-accent text-black font-black text-[10px] uppercase">× 2 Manubri</span>
+                    <span class="text-xs font-semibold text-zinc-300">Carico totale sollevato:</span>
+                </div>
+                <span id="pairGrandTotalValue" class="font-mono text-base font-black text-white">48 kg</span>
+            </div>
+
+            <!-- VISUALIZZAZIONE GRAFICA DEL BILANCIERE / MANUBRIO / PERNO -->
+            <div class="bg-black/60 rounded-2xl p-4 border border-gym-border overflow-hidden">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-[11px] font-bold uppercase tracking-wider text-zinc-400" id="visualSideLabel">Vista Lato Singolo (x2)</span>
+                    <span class="text-[11px] font-mono font-bold text-zinc-400" id="weightPerSideLabel">30 kg / lato</span>
+                </div>
+
+                <!-- Canvas Flex Bar / Dumbbell Visualizer -->
+                <div class="relative h-36 flex items-center justify-start overflow-x-auto no-scrollbar py-2 select-none" id="barbellVisualizer">
+                    <!-- Generato dinamicamente via JS -->
+                </div>
+            </div>
+
+            <!-- LISTA TESTUALE DISCHI DA INSERIRE -->
+            <div>
+                <div class="flex items-center justify-between mb-2.5">
+                    <h3 class="text-xs font-extrabold uppercase tracking-wider text-white" id="listHeaderTitle">Dischi da inserire PER LATO</h3>
+                    <span class="text-xs font-semibold text-zinc-400" id="totalDischiUsatiBadge">0 dischi</span>
+                </div>
+                <div id="platesListContainer" class="space-y-2">
+                    <!-- Righe dischi generate via JS -->
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ========================================== -->
+    <!-- SEZIONE 2: INVENTARIO DISCHI               -->
+    <!-- ========================================== -->
+    <main id="viewInventory" class="hidden px-4 pt-4 space-y-4 flex-1">
+        <section class="bg-gym-card border border-gym-border rounded-3xl p-4">
+            <div class="flex items-start justify-between gap-2 mb-3">
+                <div>
+                    <h2 class="text-base font-extrabold text-white">I Tuoi Dischi Disponibili</h2>
+                    <p class="text-xs text-zinc-400 mt-0.5">Imposta il <strong>numero totale</strong> di dischi che possiedi (es. per usare la <em>Coppia Manubri</em> servono almeno 4 dischi uguali per taglio).</p>
+                </div>
+            </div>
+
+            <!-- Preset Rapidi -->
+            <div class="flex gap-2 overflow-x-auto no-scrollbar pb-2 mb-3">
+                <button onclick="applyPreset('home_dumbbells')" class="shrink-0 px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-gym-accent active:scale-95 transition">
+                    Kit Manubri + Bilanciere
+                </button>
+                <button onclick="applyPreset('home')" class="shrink-0 px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-zinc-200 active:scale-95 transition">
+                    Home Gym Base
+                </button>
+                <button onclick="applyPreset('full')" class="shrink-0 px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-zinc-200 active:scale-95 transition">
+                    Palestra Completa
+                </button>
+                <button onclick="applyPreset('clear')" class="shrink-0 px-3 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-900/50 text-xs font-bold text-red-300 active:scale-95 transition">
+                    Azzera Tutti
+                </button>
+            </div>
+
+            <!-- Lista Controlli Quantità Dischi -->
+            <div id="inventoryList" class="space-y-2.5">
+                <!-- Generata via JS -->
+            </div>
+
+            <!-- Aggiungi Taglio Personalizzato -->
+            <div class="mt-4 pt-4 border-t border-gym-border">
+                <label class="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">Aggiungi taglio personalizzato (kg)</label>
+                <div class="flex gap-2">
+                    <input type="number" id="newPlateWeight" placeholder="Es. 0.25 o 7.5" step="0.05" min="0.05" max="100" inputmode="decimal"
+                        class="flex-1 bg-black/60 border border-gym-border focus:border-gym-accent rounded-xl px-3.5 py-2.5 font-mono text-sm font-bold text-white focus:outline-none">
+                    <button onclick="addCustomPlate()" class="px-4 py-2.5 rounded-xl bg-gym-accent hover:bg-gym-accentHover text-black font-extrabold text-sm active:scale-95 transition">
+                        + Aggiungi
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <button onclick="switchTab('calc')" class="w-full py-4 rounded-2xl bg-gym-accent text-black font-black text-base shadow-lg shadow-gym-accent/20 active:scale-[0.98] transition">
+            Salva e Torna al Calcolo
+        </button>
+    </main>
+
+    <!-- MODAL ISTRUZIONI SALVATAGGIO COME APP (PWA) -->
+    <div id="pwaModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+        <div class="bg-gym-card border border-gym-border rounded-3xl max-w-md w-full p-5 space-y-4 shadow-2xl">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-extrabold text-white">Usa come App sul Telefono</h3>
+                <button onclick="closePwaModal()" class="w-8 h-8 rounded-full bg-gym-elevated text-zinc-400 flex items-center justify-center font-bold">✕</button>
+            </div>
+            <p class="text-xs text-zinc-300 leading-relaxed">
+                Puoi installare questa pagina direttamente sulla schermata Home del tuo telefono: si aprirà a schermo intero come un'app nativa, senza barra del browser e funzionerà anche <strong>offline</strong> in palestra.
+            </p>
+            <div class="space-y-2.5 text-xs">
+                <div class="p-3 rounded-2xl bg-gym-elevated border border-gym-border">
+                    <span class="font-extrabold text-gym-accent block mb-1">iPhone (Safari):</span>
+                    <span class="text-zinc-300">Tocca l'icona <strong>Condividi</strong> (quadrato con freccia in alto) in basso e seleziona <strong>"Aggiungi alla schermata Home"</strong>.</span>
+                </div>
+                <div class="p-3 rounded-2xl bg-gym-elevated border border-gym-border">
+                    <span class="font-extrabold text-gym-accent block mb-1">Android (Chrome):</span>
+                    <span class="text-zinc-300">Tocca i <strong>3 puntini</strong> in alto a destra e seleziona <strong>"Aggiungi a schermata Home"</strong> o <strong>"Installa app"</strong>.</span>
+                </div>
+            </div>
+            <button onclick="closePwaModal()" class="w-full py-3 rounded-xl bg-gym-accent text-black font-extrabold text-sm">Ho capito</button>
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICA -->
+    <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 bg-zinc-900 border border-gym-accent text-white px-4 py-2.5 rounded-full text-xs font-bold shadow-2xl opacity-0 pointer-events-none transition-opacity duration-200">
+        Salvato!
+    </div>
+
+    <script>
+        // =========================================================================
+        // STATO DELL'APPLICAZIONE & CONFIGURAZIONE
+        // =========================================================================
+        const STORAGE_KEY = 'plateload_pro_v2';
+
+        // Configurazione delle 4 modalità attrezzo:
+        // sidesPerUnit: lati simmetrici su un singolo attrezzo (2 per bilanciere/manubrio, 1 per perno)
+        // unitsCount: quanti attrezzi vengono caricati contemporaneamente (1 o 2 per coppia manubri)
+        // inventoryDivisor: numero totale di dischi uguali richiesti per ogni singolo incremento per lato (2, 4 o 1)
+        const EQUIPMENT_CONFIG = {
+            barbell: {
+                id: 'barbell',
+                btnId: 'modeBarbell',
+                name: 'Bilanciere',
+                tareKey: 'barbell',
+                tarePresets: [20, 15, 10, 8],
+                tareLabel: 'Peso Bilanciere Vuoto (Tara)',
+                targetLabel: 'Peso Totale Bilanciere',
+                sidesPerUnit: 2,
+                unitsCount: 1,
+                inventoryDivisor: 2
+            },
+            dumbbell_single: {
+                id: 'dumbbell_single',
+                btnId: 'modeDumbbellSingle',
+                name: 'Manubrio Singolo',
+                tareKey: 'dumbbell',
+                tarePresets: [1.5, 2, 2.5, 5],
+                tareLabel: 'Peso Manubrio Vuoto (Tara)',
+                targetLabel: 'Peso Manubrio Singolo',
+                sidesPerUnit: 2,
+                unitsCount: 1,
+                inventoryDivisor: 2
+            },
+            dumbbell_pair: {
+                id: 'dumbbell_pair',
+                btnId: 'modeDumbbellPair',
+                name: 'Coppia Manubri',
+                tareKey: 'dumbbell',
+                tarePresets: [1.5, 2, 2.5, 5],
+                tareLabel: 'Tara Singolo Manubrio Vuoto',
+                targetLabel: 'Peso Target PER MANUBRIO',
+                sidesPerUnit: 2,
+                unitsCount: 2,
+                inventoryDivisor: 4
+            },
+            single_pin: {
+                id: 'single_pin',
+                btnId: 'modeSinglePin',
+                name: 'Perno / Macchina',
+                tareKey: 'pin',
+                tarePresets: [0, 5, 10, 15],
+                tareLabel: 'Tara Supporto / Cintura',
+                targetLabel: 'Peso Totale da Caricare',
+                sidesPerUnit: 1,
+                unitsCount: 1,
+                inventoryDivisor: 1
+            }
+        };
+
+        // Colori e proporzioni visive stile dischi olimpici IWF
+        const PLATE_STYLES = {
+            25:   { bg: 'bg-red-600',    border: 'border-red-400',    text: 'text-white', height: 'h-32', width: 'w-6',  label: 'Rosso' },
+            20:   { bg: 'bg-blue-600',   border: 'border-blue-400',   text: 'text-white', height: 'h-32', width: 'w-5',  label: 'Blu' },
+            15:   { bg: 'bg-yellow-400', border: 'border-yellow-200', text: 'text-black', height: 'h-28', width: 'w-5',  label: 'Giallo' },
+            10:   { bg: 'bg-emerald-600',border: 'border-emerald-400',text: 'text-white', height: 'h-24', width: 'w-4',  label: 'Verde' },
+            5:    { bg: 'bg-zinc-100',   border: 'border-white',      text: 'text-black', height: 'h-20', width: 'w-4',  label: 'Bianco' },
+            2.5:  { bg: 'bg-zinc-900',   border: 'border-zinc-500',   text: 'text-white', height: 'h-16', width: 'w-3.5',label: 'Nero' },
+            2:    { bg: 'bg-blue-500',   border: 'border-blue-300',   text: 'text-white', height: 'h-14', width: 'w-3',  label: 'Blu' },
+            1.5:  { bg: 'bg-yellow-300', border: 'border-yellow-100', text: 'text-black', height: 'h-14', width: 'w-3',  label: 'Giallo' },
+            1.25: { bg: 'bg-zinc-400',   border: 'border-zinc-200',   text: 'text-black', height: 'h-12', width: 'w-3',  label: 'Cromo' },
+            1:    { bg: 'bg-emerald-500',border: 'border-emerald-300',text: 'text-white', height: 'h-11', width: 'w-2.5',label: 'Verde' },
+            0.5:  { bg: 'bg-zinc-300',   border: 'border-white',      text: 'text-black', height: 'h-10', width: 'w-2.5',label: 'Micro' }
+        };
+
+        function getPlateStyle(weight) {
+            if (PLATE_STYLES[weight]) return PLATE_STYLES[weight];
+            if (weight >= 20) return { bg: 'bg-red-700', border: 'border-red-400', text: 'text-white', height: 'h-32', width: 'w-5', label: 'Custom' };
+            if (weight >= 10) return { bg: 'bg-indigo-600', border: 'border-indigo-400', text: 'text-white', height: 'h-24', width: 'w-4', label: 'Custom' };
+            if (weight >= 5)  return { bg: 'bg-amber-500', border: 'border-amber-300', text: 'text-black', height: 'h-20', width: 'w-4', label: 'Custom' };
+            return { bg: 'bg-zinc-500', border: 'border-zinc-300', text: 'text-white', height: 'h-12', width: 'w-3', label: 'Custom' };
+        }
+
+        // Stato iniziale di default con tare separate per attrezzo
+        let appState = {
+            targetWeight: 80,
+            equipment: 'barbell', // 'barbell' | 'dumbbell_single' | 'dumbbell_pair' | 'single_pin'
+            tares: {
+                barbell: 20,
+                dumbbell: 2,
+                pin: 0
+            },
+            selectedAlternativeIndex: 0,
+            inventory: [
+                { weight: 25,   qty: 0 },
+                { weight: 20,   qty: 2 },
+                { weight: 15,   qty: 2 },
+                { weight: 10,   qty: 2 },
+                { weight: 5,    qty: 4 },
+                { weight: 2.5,  qty: 4 },
+                { weight: 2,    qty: 4 },
+                { weight: 1.5,  qty: 0 },
+                { weight: 1.25, qty: 4 },
+                { weight: 1,    qty: 4 },
+                { weight: 0.5,  qty: 4 }
+            ]
+        };
+
+        // Caricamento da localStorage (con migrazione compatibile dalla v1)
+        function loadState() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('plateload_pro_v1');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (parsed && Array.isArray(parsed.inventory)) {
+                        appState.inventory = parsed.inventory;
+                        if (typeof parsed.targetWeight === 'number') appState.targetWeight = parsed.targetWeight;
+                        if (parsed.equipment && EQUIPMENT_CONFIG[parsed.equipment]) {
+                            appState.equipment = parsed.equipment;
+                        }
+                        if (parsed.tares) {
+                            appState.tares = { ...appState.tares, ...parsed.tares };
+                        } else if (typeof parsed.tareWeight === 'number') {
+                            appState.tares.barbell = parsed.tareWeight;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('Impossibile leggere localStorage:', e);
+            }
+        }
+
+        function saveState() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+            } catch (e) {
+                console.warn('Impossibile salvare su localStorage:', e);
+            }
+        }
+
+        // =========================================================================
+        // ALGORITMO DI OTTIMIZZAZIONE COMBINATORIA (BOUNDED SUBSET SUM / DP)
+        // =========================================================================
+        function solvePlateCombinations(neededWeightPerSide, inventoryDivisor, inventory) {
+            const SCALE = 100;
+            const targetUnits = Math.max(0, Math.round(neededWeightPerSide * SCALE));
+
+            // Calcola quanti dischi sono disponibili su UN SINGOLO LATO del singolo attrezzo:
+            // - Bilanciere / Manubrio Singolo: divisor = 2 (serve 1 coppia per aggiungere 1 disco per lato)
+            // - Coppia Manubri: divisor = 4 (servono 4 dischi uguali per aggiungere 1 disco per lato su entrambi i manubri)
+            // - Perno Singolo: divisor = 1 (ogni disco è usabile direttamente)
+            const availablePerSide = inventory
+                .map(item => ({
+                    weight: item.weight,
+                    units: Math.round(item.weight * SCALE),
+                    maxCount: Math.floor(item.qty / inventoryDivisor)
+                }))
+                .filter(item => item.maxCount > 0 && item.units > 0)
+                .sort((a, b) => b.units - a.units);
+
+            const maxReachableUnits = availablePerSide.reduce((acc, p) => acc + p.units * p.maxCount, 0);
+            const largestPlateUnits = availablePerSide.length > 0 ? availablePerSide[0].units : 0;
+            const searchLimit = Math.min(maxReachableUnits, targetUnits + largestPlateUnits);
+
+            let dp = new Map();
+            dp.set(0, { count: 0, plates: {} });
+
+            for (const plate of availablePerSide) {
+                const nextDp = new Map(dp);
+                for (const [currentSum, combo] of dp.entries()) {
+                    for (let k = 1; k <= plate.maxCount; k++) {
+                        const newSum = currentSum + plate.units * k;
+                        if (newSum > searchLimit) break;
+
+                        const newCount = combo.count + k;
+                        const existing = nextDp.get(newSum);
+
+                        if (!existing || newCount < existing.count) {
+                            const newPlates = { ...combo.plates };
+                            newPlates[plate.weight] = (newPlates[plate.weight] || 0) + k;
+                            nextDp.set(newSum, { count: newCount, plates: newPlates });
+                        }
+                    }
+                }
+                dp = nextDp;
+            }
+
+            // 1. Peso esatto trovato
+            if (dp.has(targetUnits)) {
+                return {
+                    exact: true,
+                    solutions: [{
+                        sideWeight: targetUnits / SCALE,
+                        plates: dp.get(targetUnits).plates,
+                        plateCount: dp.get(targetUnits).count,
+                        diffUnits: 0
+                    }]
+                };
+            }
+
+            // 2. Migliore approssimazione per difetto e per eccesso
+            let bestUnder = null;
+            let bestOver = null;
+
+            for (const [sumUnits, combo] of dp.entries()) {
+                const diff = sumUnits - targetUnits;
+                if (diff < 0) {
+                    if (!bestUnder || diff > bestUnder.diffUnits) {
+                        bestUnder = {
+                            sideWeight: sumUnits / SCALE,
+                            plates: combo.plates,
+                            plateCount: combo.count,
+                            diffUnits: diff
+                        };
+                    }
+                } else if (diff > 0) {
+                    if (!bestOver || diff < bestOver.diffUnits) {
+                        bestOver = {
+                            sideWeight: sumUnits / SCALE,
+                            plates: combo.plates,
+                            plateCount: combo.count,
+                            diffUnits: diff
+                        };
+                    }
+                }
+            }
+
+            const solutions = [];
+            if (bestUnder && bestOver) {
+                if (Math.abs(bestUnder.diffUnits) <= Math.abs(bestOver.diffUnits)) {
+                    solutions.push(bestUnder, bestOver);
+                } else {
+                    solutions.push(bestOver, bestUnder);
+                }
+            } else if (bestUnder) {
+                solutions.push(bestUnder);
+            } else if (bestOver) {
+                solutions.push(bestOver);
+            }
+
+            return {
+                exact: false,
+                solutions
+            };
+        }
+
+        // =========================================================================
+        // FUNZIONI DI AGGIORNAMENTO UI & CALCOLO
+        // =========================================================================
+        function formatKg(val) {
+            return Number(val.toFixed(2)).toString();
+        }
+
+        function getCurrentTare() {
+            const cfg = EQUIPMENT_CONFIG[appState.equipment];
+            return Math.max(0, parseFloat(appState.tares[cfg.tareKey]) || 0);
+        }
+
+        function recalculateAndRender() {
+            const cfg = EQUIPMENT_CONFIG[appState.equipment];
+            const targetPerUnit = Math.max(0, parseFloat(appState.targetWeight) || 0);
+            const tarePerUnit = getCurrentTare();
+
+            // Peso dei dischi necessario su un singolo attrezzo (es. singolo bilanciere o singolo manubrio)
+            const platesNeededPerUnit = Math.max(0, targetPerUnit - tarePerUnit);
+            // Peso dei dischi necessario su ciascun lato di quel singolo attrezzo
+            const neededPerSide = platesNeededPerUnit / cfg.sidesPerUnit;
+
+            const result = solvePlateCombinations(neededPerSide, cfg.inventoryDivisor, appState.inventory);
+
+            if (appState.selectedAlternativeIndex >= result.solutions.length) {
+                appState.selectedAlternativeIndex = 0;
+            }
+
+            const activeSolution = result.solutions[appState.selectedAlternativeIndex] || { sideWeight: 0, plates: {}, plateCount: 0 };
+
+            // Peso effettivamente raggiunto per singolo attrezzo
+            const achievedPlatesPerUnit = activeSolution.sideWeight * cfg.sidesPerUnit;
+            const achievedPerUnit = tarePerUnit + achievedPlatesPerUnit;
+            const diffPerUnit = Number((achievedPerUnit - targetPerUnit).toFixed(2));
+
+            // 1. Aggiorna Riepilogo Numerico
+            const isPair = cfg.id === 'dumbbell_pair';
+            document.getElementById('summaryTargetLabel').textContent = isPair ? 'Target / Man.' : 'Target';
+            document.getElementById('summaryAchievedLabel').textContent = isPair ? 'Manubrio' : 'Raggiunto';
+            document.getElementById('summaryTarget').textContent = `${formatKg(targetPerUnit)} kg`;
+            document.getElementById('summaryAchieved').textContent = `${formatKg(achievedPerUnit)} kg`;
+
+            const diffEl = document.getElementById('summaryDiff');
+            if (diffPerUnit === 0) {
+                diffEl.textContent = '0 kg';
+                diffEl.className = 'font-mono text-lg font-extrabold text-emerald-400';
+            } else {
+                diffEl.textContent = `${diffPerUnit > 0 ? '+' : ''}${formatKg(diffPerUnit)} kg`;
+                diffEl.className = 'font-mono text-lg font-extrabold text-amber-400';
+            }
+
+            // Banner Totale Complessivo per Coppia Manubri
+            const pairBanner = document.getElementById('pairTotalBanner');
+            if (isPair) {
+                pairBanner.classList.remove('hidden');
+                document.getElementById('pairGrandTotalValue').textContent = `${formatKg(achievedPerUnit * 2)} kg`;
+            } else {
+                pairBanner.classList.add('hidden');
+            }
+
+            // 2. Aggiorna Banner di Stato
+            const banner = document.getElementById('statusBanner');
+            const icon = document.getElementById('statusIcon');
+            const title = document.getElementById('statusTitle');
+            const subtitle = document.getElementById('statusSubtitle');
+            const altBox = document.getElementById('alternativesBox');
+            const altList = document.getElementById('alternativesList');
+
+            if (targetPerUnit < tarePerUnit) {
+                banner.className = 'rounded-2xl p-3 flex items-start gap-3 bg-amber-500/10 border border-amber-500/30';
+                icon.className = 'w-6 h-6 rounded-full bg-amber-500 text-black flex items-center justify-center shrink-0 mt-0.5 font-black text-xs';
+                icon.textContent = '!';
+                title.className = 'text-sm font-extrabold text-amber-400';
+                title.textContent = 'Target inferiore alla tara dell\'attrezzo';
+                subtitle.textContent = `L'attrezzo vuoto pesa già ${formatKg(tarePerUnit)} kg. Nessun disco necessario.`;
+                altBox.classList.add('hidden');
+            } else if (result.exact) {
+                banner.className = 'rounded-2xl p-3 flex items-start gap-3 bg-emerald-500/10 border border-emerald-500/30';
+                icon.className = 'w-6 h-6 rounded-full bg-emerald-500 text-black flex items-center justify-center shrink-0 mt-0.5 font-black text-xs';
+                icon.textContent = '✓';
+                title.className = 'text-sm font-extrabold text-emerald-400';
+                title.textContent = 'Peso Esatto Raggiunto';
+                subtitle.textContent = platesNeededPerUnit === 0
+                    ? 'Usa solo l\'attrezzo scarico.'
+                    : (isPair
+                        ? `Combinazione esatta trovata (set da 4 dischi uguali dal tuo inventario).`
+                        : `Combinazione precisa trovata con i tuoi dischi disponibili.`);
+                altBox.classList.add('hidden');
+            } else {
+                banner.className = 'rounded-2xl p-3 flex items-start gap-3 bg-amber-500/15 border border-amber-500/40';
+                icon.className = 'w-6 h-6 rounded-full bg-amber-400 text-black flex items-center justify-center shrink-0 mt-0.5 font-black text-xs';
+                icon.textContent = '≈';
+                title.className = 'text-sm font-extrabold text-amber-300';
+                title.textContent = 'Inventario insufficiente per il peso esatto';
+                subtitle.textContent = isPair
+                    ? `Migliore approssimazione: ${formatKg(achievedPerUnit)} kg per manubrio (${diffPerUnit > 0 ? '+' : ''}${formatKg(diffPerUnit)} kg).`
+                    : `Migliore approssimazione con i tuoi dischi: ${formatKg(achievedPerUnit)} kg (${diffPerUnit > 0 ? '+' : ''}${formatKg(diffPerUnit)} kg).`;
+
+                if (result.solutions.length > 1) {
+                    altBox.classList.remove('hidden');
+                    altList.innerHTML = result.solutions.map((sol, idx) => {
+                        const solUnitTotal = tarePerUnit + sol.sideWeight * cfg.sidesPerUnit;
+                        const solDiff = Number((solUnitTotal - targetPerUnit).toFixed(2));
+                        const isSelected = idx === appState.selectedAlternativeIndex;
+                        return `
+                            <button onclick="selectAlternative(${idx})" class="w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition ${isSelected ? 'bg-gym-accent/15 border-gym-accent text-white' : 'bg-gym-elevated/60 border-gym-border text-zinc-300 hover:bg-gym-elevated'}">
+                                <div>
+                                    <span class="font-mono font-extrabold text-sm">${formatKg(solUnitTotal)} kg</span>
+                                    <span class="text-xs text-zinc-400 ml-1.5">${isPair ? '/ manubrio' : ''} (${formatKg(sol.sideWeight)} kg/lato)</span>
+                                </div>
+                                <span class="font-mono text-xs font-extrabold px-2 py-0.5 rounded-lg ${solDiff > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-sky-500/20 text-sky-300'}">
+                                    ${solDiff > 0 ? '+' : ''}${formatKg(solDiff)} kg
+                                </span>
+                            </button>
+                        `;
+                    }).join('');
+                } else {
+                    altBox.classList.add('hidden');
+                }
+            }
+
+            // 3. Aggiorna Etichette Visualizzatore e Lista
+            if (cfg.id === 'barbell') {
+                document.getElementById('visualSideLabel').textContent = 'Vista Lato Bilanciere (× 2 lati)';
+                document.getElementById('weightPerSideLabel').textContent = `${formatKg(activeSolution.sideWeight)} kg / lato`;
+                document.getElementById('listHeaderTitle').textContent = 'Dischi da inserire PER LATO';
+            } else if (cfg.id === 'dumbbell_single') {
+                document.getElementById('visualSideLabel').textContent = 'Vista Manubrio Singolo (2 lati)';
+                document.getElementById('weightPerSideLabel').textContent = `${formatKg(activeSolution.sideWeight)} kg / lato`;
+                document.getElementById('listHeaderTitle').textContent = 'Dischi per CIASCUN LATO del manubrio';
+            } else if (cfg.id === 'dumbbell_pair') {
+                document.getElementById('visualSideLabel').textContent = 'Schema Singolo Manubrio (× 2 MANUBRI)';
+                document.getElementById('weightPerSideLabel').textContent = `${formatKg(activeSolution.sideWeight)} kg / lato`;
+                document.getElementById('listHeaderTitle').textContent = 'Per OGNI LATO di ciascun manubrio';
+            } else {
+                document.getElementById('visualSideLabel').textContent = 'Carico su Perno Singolo';
+                document.getElementById('weightPerSideLabel').textContent = `${formatKg(activeSolution.sideWeight)} kg totali`;
+                document.getElementById('listHeaderTitle').textContent = 'Dischi da inserire SUL PERNO';
+            }
+
+            // 4. Renderizza Lista Dischi & Visualizzatore Grafico
+            renderPlatesVisualAndList(activeSolution.plates, cfg);
+        }
+
+        function renderPlatesVisualAndList(platesMap, cfg) {
+            const visualizer = document.getElementById('barbellVisualizer');
+            const listContainer = document.getElementById('platesListContainer');
+            const totalBadge = document.getElementById('totalDischiUsatiBadge');
+
+            const sortedWeights = Object.keys(platesMap)
+                .map(Number)
+                .filter(w => platesMap[w] > 0)
+                .sort((a, b) => b - a);
+
+            let totalPlatesPerSide = 0;
+            sortedWeights.forEach(w => totalPlatesPerSide += platesMap[w]);
+
+            const totalPlatesAllSides = totalPlatesPerSide * cfg.inventoryDivisor;
+            if (cfg.id === 'dumbbell_pair') {
+                totalBadge.textContent = `${totalPlatesPerSide}/lato (${totalPlatesAllSides} tot su 2 man.)`;
+            } else if (cfg.sidesPerUnit === 2) {
+                totalBadge.textContent = `${totalPlatesPerSide}/lato (${totalPlatesAllSides} tot)`;
+            } else {
+                totalBadge.textContent = `${totalPlatesPerSide} dischi`;
+            }
+
+            // Costruzione grafico specifico per Manubri vs Bilanciere/Perno
+            const isDumbbell = cfg.id === 'dumbbell_single' || cfg.id === 'dumbbell_pair';
+            let barHtml = '';
+
+            if (isDumbbell) {
+                // Disegno Manubrio Completo (Lato Sinistro + Impugnatura + Lato Destro)
+                const reverseWeights = [...sortedWeights].reverse(); // Dal più leggero (esterno) al più pesante (interno)
+
+                barHtml += `<div class="w-full flex items-center justify-center gap-0.5 relative">`;
+                if (cfg.id === 'dumbbell_pair') {
+                    barHtml += `<span class="absolute -top-1 right-0 px-2 py-0.5 rounded-md bg-gym-accent text-black font-black text-[10px]">× 2 MANUBRI</span>`;
+                }
+
+                // Perno sinistro esterno
+                barHtml += `<div class="h-4 w-4 bg-gradient-to-b from-zinc-300 via-zinc-400 to-zinc-600 rounded-l-sm shrink-0"></div>`;
+
+                // Dischi lato sinistro (dall'esterno verso l'interno)
+                reverseWeights.forEach(weight => {
+                    const count = platesMap[weight];
+                    const style = getPlateStyle(weight);
+                    for (let i = 0; i < count; i++) {
+                        barHtml += `
+                            <div class="plate-anim ${style.height} ${style.width} ${style.bg} ${style.border} border rounded-sm flex items-center justify-center shadow-lg shrink-0">
+                                <span class="${style.text} font-mono font-black text-[9px] -rotate-90 whitespace-nowrap tracking-tighter">${formatKg(weight)}</span>
+                            </div>
+                        `;
+                    }
+                });
+
+                // Collare sinistro + Impugnatura zigrinata centrale + Collare destro
+                barHtml += `
+                    <div class="h-8 w-2 bg-zinc-300 rounded-sm border-x border-zinc-500 shrink-0"></div>
+                    <div class="h-4 w-16 bg-gradient-to-b from-zinc-400 via-zinc-500 to-zinc-700 border-y border-zinc-400/30 flex items-center justify-center shrink-0">
+                        <span class="text-[8px] font-mono font-bold text-zinc-900 tracking-widest">||||||</span>
+                    </div>
+                    <div class="h-8 w-2 bg-zinc-300 rounded-sm border-x border-zinc-500 shrink-0"></div>
+                `;
+
+                // Dischi lato destro (dall'interno verso l'esterno)
+                sortedWeights.forEach(weight => {
+                    const count = platesMap[weight];
+                    const style = getPlateStyle(weight);
+                    for (let i = 0; i < count; i++) {
+                        barHtml += `
+                            <div class="plate-anim ${style.height} ${style.width} ${style.bg} ${style.border} border rounded-sm flex items-center justify-center shadow-lg shrink-0">
+                                <span class="${style.text} font-mono font-black text-[9px] -rotate-90 whitespace-nowrap tracking-tighter">${formatKg(weight)}</span>
+                            </div>
+                        `;
+                    }
+                });
+
+                // Perno destro esterno
+                barHtml += `<div class="h-4 w-4 bg-gradient-to-b from-zinc-300 via-zinc-400 to-zinc-600 rounded-r-sm shrink-0"></div>`;
+                barHtml += `</div>`;
+            } else {
+                // Disegno Bilanciere o Perno Singolo
+                barHtml = `
+                    <div class="h-3.5 w-10 bg-gradient-to-b from-zinc-400 to-zinc-600 rounded-l-sm shrink-0"></div>
+                    <div class="h-9 w-2.5 bg-zinc-300 rounded-sm border-r border-zinc-500 shrink-0 shadow-md"></div>
+                `;
+
+                if (sortedWeights.length === 0) {
+                    barHtml += `
+                        <div class="h-5 flex-1 min-w-[140px] bg-gradient-to-b from-zinc-300 via-zinc-400 to-zinc-600 rounded-r-md flex items-center justify-center">
+                            <span class="text-[10px] font-extrabold text-zinc-900 uppercase tracking-wider">Scarico</span>
+                        </div>
+                    `;
+                } else {
+                    barHtml += `<div class="flex items-center gap-1 px-0.5">`;
+                    sortedWeights.forEach(weight => {
+                        const count = platesMap[weight];
+                        const style = getPlateStyle(weight);
+                        for (let i = 0; i < count; i++) {
+                            barHtml += `
+                                <div class="plate-anim ${style.height} ${style.width} ${style.bg} ${style.border} border rounded-sm flex items-center justify-center shadow-lg shrink-0 relative">
+                                    <span class="${style.text} font-mono font-black text-[9px] -rotate-90 whitespace-nowrap tracking-tighter">${formatKg(weight)}</span>
+                                </div>
+                            `;
+                        }
+                    });
+                    barHtml += `</div>`;
+                    barHtml += `<div class="h-5 w-8 bg-gradient-to-b from-zinc-300 via-zinc-400 to-zinc-600 rounded-r-md shrink-0"></div>`;
+                }
+            }
+
+            visualizer.innerHTML = barHtml;
+
+            // Costruzione Lista Righe
+            if (sortedWeights.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="p-4 rounded-2xl bg-gym-elevated/40 border border-dashed border-gym-border text-center text-xs text-zinc-400">
+                        Nessun disco da caricare.
+                    </div>
+                `;
+                return;
+            }
+
+            listContainer.innerHTML = sortedWeights.map(weight => {
+                const countPerSide = platesMap[weight];
+                const style = getPlateStyle(weight);
+                const totalUsedOfThis = countPerSide * cfg.inventoryDivisor;
+                const invItem = appState.inventory.find(i => i.weight === weight);
+                const owned = invItem ? invItem.qty : 0;
+
+                const subLabel = cfg.id === 'dumbbell_pair'
+                    ? `${countPerSide * 2} per manubrio • ${totalUsedOfThis}/${owned} tot`
+                    : `Usati: ${totalUsedOfThis} su ${owned} disponibili`;
+
+                const sideBadgeText = cfg.id === 'dumbbell_pair'
+                    ? 'per lato (×4 tot)'
+                    : (cfg.sidesPerUnit === 2 ? 'per lato' : 'totale');
+
+                return `
+                    <div class="flex items-center justify-between p-3 rounded-2xl bg-gym-elevated border border-gym-border">
+                        <div class="flex items-center gap-3">
+                            <div class="w-11 h-11 rounded-xl ${style.bg} ${style.border} border-2 flex items-center justify-center shadow-md shrink-0">
+                                <span class="font-mono font-black text-sm ${style.text}">${formatKg(weight)}</span>
+                            </div>
+                            <div>
+                                <div class="font-extrabold text-sm text-white">Disco da ${formatKg(weight)} kg</div>
+                                <div class="text-[11px] text-zinc-400">${subLabel}</div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="font-mono text-2xl font-black text-gym-accent">${countPerSide}×</span>
+                            <span class="block text-[10px] font-bold uppercase text-zinc-400">${sideBadgeText}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // =========================================================================
+        // GESTIONE INVENTARIO DISCHI
+        // =========================================================================
+        function renderInventory() {
+            appState.inventory.sort((a, b) => b.weight - a.weight);
+
+            const container = document.getElementById('inventoryList');
+            let totalPlates = 0;
+            let totalKg = 0;
+
+            container.innerHTML = appState.inventory.map((item, idx) => {
+                totalPlates += item.qty;
+                totalKg += item.weight * item.qty;
+                const style = getPlateStyle(item.weight);
+
+                let availabilityDesc = 'Non disponibile';
+                if (item.qty > 0) {
+                    const pairs = Math.floor(item.qty / 2);
+                    const setsOf4 = Math.floor(item.qty / 4);
+                    availabilityDesc = `${pairs} coppie${setsOf4 > 0 ? ` • ${setsOf4} set×4` : ''} (${formatKg(item.weight * item.qty)} kg)`;
+                }
+
+                return `
+                    <div class="flex items-center justify-between p-2.5 rounded-2xl bg-gym-elevated/80 border ${item.qty > 0 ? 'border-zinc-700' : 'border-gym-border opacity-60'} transition">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl ${style.bg} ${style.border} border flex items-center justify-center font-mono font-black text-xs ${style.text} shrink-0">
+                                ${formatKg(item.weight)}
+                            </div>
+                            <div>
+                                <div class="font-extrabold text-sm text-white">${formatKg(item.weight)} kg</div>
+                                <div class="text-[11px] text-zinc-400">${availabilityDesc}</div>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <button onclick="updatePlateQty(${idx}, -1)" class="w-11 h-11 rounded-xl bg-black/60 hover:bg-zinc-900 border border-gym-border text-white font-black text-xl flex items-center justify-center active:scale-90 transition select-none">
+                                −
+                            </button>
+                            <span class="w-8 text-center font-mono text-lg font-extrabold ${item.qty > 0 ? 'text-gym-accent' : 'text-zinc-500'}">
+                                ${item.qty}
+                            </span>
+                            <button onclick="updatePlateQty(${idx}, 1)" class="w-11 h-11 rounded-xl bg-gym-accent text-black font-black text-xl flex items-center justify-center active:scale-90 transition select-none">
+                                +
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('totalPlatesCount').textContent = totalPlates;
+            document.getElementById('inventorySummaryBadge').textContent = `${totalPlates} dischi • ${formatKg(totalKg)} kg tot`;
+        }
+
+        function updatePlateQty(index, delta) {
+            const item = appState.inventory[index];
+            if (!item) return;
+            item.qty = Math.max(0, Math.min(50, item.qty + delta));
+            appState.selectedAlternativeIndex = 0;
+            saveState();
+            renderInventory();
+            recalculateAndRender();
+        }
+
+        function addCustomPlate() {
+            const input = document.getElementById('newPlateWeight');
+            const val = parseFloat(input.value);
+            if (isNaN(val) || val <= 0 || val > 200) {
+                showToast('Inserisci un peso valido (es. 0.25 o 7.5)');
+                return;
+            }
+            const rounded = Math.round(val * 100) / 100;
+            const existing = appState.inventory.find(i => i.weight === rounded);
+            if (existing) {
+                existing.qty += 2;
+                showToast(`Aggiunti 2 dischi da ${formatKg(rounded)} kg`);
+            } else {
+                appState.inventory.push({ weight: rounded, qty: 2 });
+                showToast(`Creato taglio da ${formatKg(rounded)} kg (2 pz)`);
+            }
+            input.value = '';
+            appState.selectedAlternativeIndex = 0;
+            saveState();
+            renderInventory();
+            recalculateAndRender();
+        }
+
+        function applyPreset(type) {
+            if (type === 'home_dumbbells') {
+                appState.inventory = [
+                    { weight: 20, qty: 2 },
+                    { weight: 15, qty: 2 },
+                    { weight: 10, qty: 2 },
+                    { weight: 5, qty: 4 },
+                    { weight: 2.5, qty: 4 },
+                    { weight: 2, qty: 4 },
+                    { weight: 1.25, qty: 4 },
+                    { weight: 1, qty: 4 },
+                    { weight: 0.5, qty: 4 }
+                ];
+                showToast('Kit Manubri + Bilanciere caricato');
+            } else if (type === 'home') {
+                appState.inventory = [
+                    { weight: 20, qty: 2 },
+                    { weight: 15, qty: 2 },
+                    { weight: 10, qty: 2 },
+                    { weight: 5, qty: 4 },
+                    { weight: 2.5, qty: 2 },
+                    { weight: 1.25, qty: 2 }
+                ];
+                showToast('Preset Home Gym caricato');
+            } else if (type === 'full') {
+                appState.inventory = [
+                    { weight: 25, qty: 4 },
+                    { weight: 20, qty: 6 },
+                    { weight: 15, qty: 4 },
+                    { weight: 10, qty: 4 },
+                    { weight: 5, qty: 8 },
+                    { weight: 2.5, qty: 4 },
+                    { weight: 2, qty: 4 },
+                    { weight: 1.5, qty: 4 },
+                    { weight: 1.25, qty: 4 },
+                    { weight: 1, qty: 4 },
+                    { weight: 0.5, qty: 4 }
+                ];
+                showToast('Preset Palestra Completa caricato');
+            } else if (type === 'clear') {
+                appState.inventory.forEach(i => i.qty = 0);
+                showToast('Inventario azzerato');
+            }
+            appState.selectedAlternativeIndex = 0;
+            saveState();
+            renderInventory();
+            recalculateAndRender();
+        }
+
+        // =========================================================================
+        // INTERAZIONI UTENTE (TARGET, ATTREZZO, TARA SEPARATA, TAB)
+        // =========================================================================
+        function onTargetInput(val) {
+            const num = parseFloat(val);
+            appState.targetWeight = isNaN(num) ? 0 : Math.max(0, num);
+            appState.selectedAlternativeIndex = 0;
+            saveState();
+            recalculateAndRender();
+        }
+
+        function adjustTarget(delta) {
+            const current = parseFloat(appState.targetWeight) || 0;
+            const next = Math.max(0, Math.round((current + delta) * 100) / 100);
+            appState.targetWeight = next;
+            appState.selectedAlternativeIndex = 0;
+            document.getElementById('targetInput').value = next;
+            saveState();
+            recalculateAndRender();
+        }
+
+        function resetTarget() {
+            const base = getCurrentTare();
+            appState.targetWeight = base;
+            appState.selectedAlternativeIndex = 0;
+            document.getElementById('targetInput').value = base;
+            saveState();
+            recalculateAndRender();
+        }
+
+        function setEquipment(equipId) {
+            if (!EQUIPMENT_CONFIG[equipId]) return;
+            const prevCfg = EQUIPMENT_CONFIG[appState.equipment];
+            appState.equipment = equipId;
+            appState.selectedAlternativeIndex = 0;
+
+            const cfg = EQUIPMENT_CONFIG[equipId];
+
+            // Se si passa da bilanciere a manubrio (o viceversa) e il target attuale è uguale alla vecchia tara, aggiorna al nuovo default
+            if (prevCfg && prevCfg.tareKey !== cfg.tareKey) {
+                const currentTarget = parseFloat(appState.targetWeight) || 0;
+                if (cfg.tareKey === 'dumbbell' && currentTarget > 60) {
+                    appState.targetWeight = 16;
+                    document.getElementById('targetInput').value = 16;
+                } else if (cfg.tareKey === 'barbell' && currentTarget < 15) {
+                    appState.targetWeight = 60;
+                    document.getElementById('targetInput').value = 60;
+                }
+            }
+
+            // Aggiorna stile pulsanti attrezzo
+            document.querySelectorAll('.equip-btn').forEach(btn => {
+                const isActive = btn.id === cfg.btnId;
+                const titleSpan = btn.querySelector('span:first-child');
+                const iconSvg = btn.querySelector('svg');
+                const badgeSpan = btn.querySelector('.equip-badge');
+
+                if (isActive) {
+                    btn.className = 'equip-btn p-3 rounded-2xl border-2 border-gym-accent bg-gym-accent/10 text-left transition active:scale-[0.98]';
+                    titleSpan.className = 'font-extrabold text-sm text-white flex items-center gap-1.5';
+                    if (iconSvg) iconSvg.classList.replace('text-zinc-400', 'text-gym-accent');
+                    badgeSpan.className = 'equip-badge text-[10px] font-black px-2 py-0.5 rounded-full bg-gym-accent text-black';
+                } else {
+                    btn.className = 'equip-btn p-3 rounded-2xl border-2 border-gym-border bg-gym-elevated/50 text-left transition active:scale-[0.98]';
+                    titleSpan.className = 'font-extrabold text-sm text-zinc-300 flex items-center gap-1.5';
+                    if (iconSvg) iconSvg.classList.replace('text-gym-accent', 'text-zinc-400');
+                    badgeSpan.className = 'equip-badge text-[10px] font-black px-2 py-0.5 rounded-full bg-zinc-700 text-zinc-200';
+                }
+            });
+
+            // Aggiorna etichetta target e pulsanti tara dedicati all'attrezzo
+            document.getElementById('targetInputLabel').textContent = cfg.targetLabel;
+            document.getElementById('tareTitleLabel').textContent = cfg.tareLabel;
+            renderTareControls();
+
+            saveState();
+            recalculateAndRender();
+        }
+
+        function renderTareControls() {
+            const cfg = EQUIPMENT_CONFIG[appState.equipment];
+            const currentTare = getCurrentTare();
+            const grid = document.getElementById('tareButtonsGrid');
+
+            document.getElementById('tareDisplayLabel').textContent = `${formatKg(currentTare)} kg`;
+
+            const isPreset = cfg.tarePresets.includes(currentTare);
+            let html = cfg.tarePresets.map(val => {
+                const active = val === currentTare;
+                return `
+                    <button onclick="setTare(${val})" data-tare="${val}" class="tare-btn py-2.5 rounded-xl font-mono text-xs font-extrabold border transition active:scale-95 ${active ? 'bg-gym-accent text-black border-gym-accent' : 'bg-gym-elevated text-zinc-300 border-gym-border'}">
+                        ${formatKg(val)}
+                    </button>
+                `;
+            }).join('');
+
+            html += `
+                <div class="relative">
+                    <input type="number" id="customTareInput" placeholder="Altro" step="0.25" min="0" inputmode="decimal"
+                        value="${!isPreset ? formatKg(currentTare) : ''}"
+                        oninput="setCustomTare(this.value)"
+                        class="w-full h-full py-2 px-1 text-center rounded-xl bg-black/50 border ${!isPreset ? 'border-gym-accent text-gym-accent' : 'border-gym-border text-white'} focus:border-gym-accent font-mono text-xs font-bold focus:outline-none">
+                </div>
+            `;
+
+            grid.innerHTML = html;
+        }
+
+        function setTare(weight) {
+            const cfg = EQUIPMENT_CONFIG[appState.equipment];
+            appState.tares[cfg.tareKey] = weight;
+            appState.selectedAlternativeIndex = 0;
+            renderTareControls();
+            saveState();
+            recalculateAndRender();
+        }
+
+        function setCustomTare(val) {
+            const cfg = EQUIPMENT_CONFIG[appState.equipment];
+            const num = parseFloat(val);
+            const weight = isNaN(num) ? 0 : Math.max(0, num);
+            appState.tares[cfg.tareKey] = weight;
+            appState.selectedAlternativeIndex = 0;
+
+            document.getElementById('tareDisplayLabel').textContent = `${formatKg(weight)} kg`;
+            document.querySelectorAll('.tare-btn').forEach(btn => {
+                btn.className = 'tare-btn py-2.5 rounded-xl font-mono text-xs font-extrabold border transition active:scale-95 bg-gym-elevated text-zinc-300 border-gym-border';
+            });
+
+            saveState();
+            recalculateAndRender();
+        }
+
+        function adjustTarget(delta) {
+            const current = parseFloat(appState.targetWeight) || 0;
+            const next = Math.max(0, Math.round((current + delta) * 100) / 100);
+            appState.targetWeight = next;
+            appState.selectedAlternativeIndex = 0;
+            document.getElementById('targetInput').value = next;
+            saveState();
+            recalculateAndRender();
+        }
+
+        function resetTarget() {
+            const base = appState.tareWeight || 0;
+            appState.targetWeight = base;
+            appState.selectedAlternativeIndex = 0;
+            document.getElementById('targetInput').value = base;
+            saveState();
+            recalculateAndRender();
+        }
+
+        function setLoadMode(mode) {
+            appState.loadMode = mode;
+            appState.selectedAlternativeIndex = 0;
+
+            const btn2 = document.getElementById('mode2Sides');
+            const btn1 = document.getElementById('mode1Side');
+
+            if (mode === 2) {
+                btn2.className = 'p-3 rounded-2xl border-2 border-gym-accent bg-gym-accent/10 text-left transition active:scale-[0.98]';
+                btn2.querySelector('span:first-child').className = 'font-extrabold text-sm text-white';
+                btn2.querySelector('span:last-child').className = 'text-[10px] font-black px-2 py-0.5 rounded-full bg-gym-accent text-black';
+
+                btn1.className = 'p-3 rounded-2xl border-2 border-gym-border bg-gym-elevated/50 text-left transition active:scale-[0.98]';
+                btn1.querySelector('span:first-child').className = 'font-extrabold text-sm text-zinc-300';
+                btn1.querySelector('span:last-child').className = 'text-[10px] font-black px-2 py-0.5 rounded-full bg-zinc-700 text-zinc-200';
+            } else {
+                btn1.className = 'p-3 rounded-2xl border-2 border-gym-accent bg-gym-accent/10 text-left transition active:scale-[0.98]';
+                btn1.querySelector('span:first-child').className = 'font-extrabold text-sm text-white';
+                btn1.querySelector('span:last-child').className = 'text-[10px] font-black px-2 py-0.5 rounded-full bg-gym-accent text-black';
+
+                btn2.className = 'p-3 rounded-2xl border-2 border-gym-border bg-gym-elevated/50 text-left transition active:scale-[0.98]';
+                btn2.querySelector('span:first-child').className = 'font-extrabold text-sm text-zinc-300';
+                btn2.querySelector('span:last-child').className = 'text-[10px] font-black px-2 py-0.5 rounded-full bg-zinc-700 text-zinc-200';
+            }
+
+            saveState();
+            recalculateAndRender();
+        }
+
+        function setTare(weight) {
+            appState.tareWeight = weight;
+            appState.selectedAlternativeIndex = 0;
+            document.getElementById('customTareInput').value = '';
+            updateTareButtonsUI(weight);
+            saveState();
+            recalculateAndRender();
+        }
+
+        function setCustomTare(val) {
+            const num = parseFloat(val);
+            const weight = isNaN(num) ? 0 : Math.max(0, num);
+            appState.tareWeight = weight;
+            appState.selectedAlternativeIndex = 0;
+            updateTareButtonsUI(null);
+            saveState();
+            recalculateAndRender();
+        }
+
+        function updateTareButtonsUI(activePreset) {
+            document.getElementById('tareDisplayLabel').textContent = `${formatKg(appState.tareWeight)} kg`;
+            document.querySelectorAll('.tare-btn').forEach(btn => {
+                const btnVal = Number(btn.dataset.tare);
+                if (activePreset !== null && btnVal === activePreset) {
+                    btn.className = 'tare-btn py-2.5 rounded-xl font-mono text-xs font-extrabold border transition active:scale-95 bg-gym-accent text-black border-gym-accent';
+                } else {
+                    btn.className = 'tare-btn py-2.5 rounded-xl font-mono text-xs font-extrabold border transition active:scale-95 bg-gym-elevated text-zinc-300 border-gym-border';
+                }
+            });
+        }
+
+        function selectAlternative(index) {
+            appState.selectedAlternativeIndex = index;
+            recalculateAndRender();
+        }
+
+        function switchTab(tab) {
+            const viewCalc = document.getElementById('viewCalc');
+            const viewInv = document.getElementById('viewInventory');
+            const btnCalc = document.getElementById('tabBtnCalc');
+            const btnInv = document.getElementById('tabBtnInv');
+
+            if (tab === 'calc') {
+                viewCalc.classList.remove('hidden');
+                viewInv.classList.add('hidden');
+                btnCalc.className = 'py-2.5 rounded-xl text-sm font-extrabold transition-all bg-gym-accent text-black shadow-md';
+                btnInv.className = 'py-2.5 rounded-xl text-sm font-bold transition-all text-zinc-400 hover:text-white';
+                recalculateAndRender();
+            } else {
+                viewCalc.classList.add('hidden');
+                viewInv.classList.remove('hidden');
+                btnInv.className = 'py-2.5 rounded-xl text-sm font-extrabold transition-all bg-gym-accent text-black shadow-md';
+                btnCalc.className = 'py-2.5 rounded-xl text-sm font-bold transition-all text-zinc-400 hover:text-white';
+                renderInventory();
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function openPwaModal() {
+            document.getElementById('pwaModal').classList.remove('hidden');
+        }
+
+        function closePwaModal() {
+            document.getElementById('pwaModal').classList.add('hidden');
+        }
+
+        let toastTimer = null;
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.remove('opacity-0');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                toast.classList.add('opacity-0');
+            }, 2200);
+        }
+
+        // =========================================================================
+        // INIZIALIZZAZIONE ALL'AVVIO
+        // =========================================================================
+        window.addEventListener('DOMContentLoaded', () => {
+            loadState();
+            document.getElementById('targetInput').value = appState.targetWeight;
+            setEquipment(appState.equipment);
+            renderInventory();
+            recalculateAndRender();
+        });
+    </script>
+</body>
+</html>
