@@ -492,7 +492,40 @@
         // =========================================================================
         // ALGORITMO DI OTTIMIZZAZIONE COMBINATORIA (BOUNDED SUBSET SUM / DP)
         // =========================================================================
-        function solvePlateCombinations(neededWeightPerSide, inventoryDivisor, inventory) {
+        // Among all plate combos reaching exactly targetUnits, pick the one whose two sides
+        // can be split with the smallest imbalance (then fewest plates). Used in pair mode.
+        function bestBalancedCombo(availablePerSide, targetUnits) {
+            const SCALE = 100;
+            let best = null;
+            let evaluated = 0;
+            const MAX_EVALUATED = 20000;
+
+            function dfs(idx, remaining, plates, count) {
+                if (remaining === 0) {
+                    if (++evaluated > MAX_EVALUATED) return;
+                    const s = splitSides(plates);
+                    const imb = Math.round(Math.abs(s.leftW - s.rightW) * SCALE);
+                    if (!best || imb < best.imb || (imb === best.imb && count < best.count)) {
+                        best = { plates: { ...plates }, count, imb };
+                    }
+                    return;
+                }
+                if (idx >= availablePerSide.length) return;
+                const t = availablePerSide[idx];
+                for (let k = 0; k <= t.maxCount; k++) {
+                    const ns = t.units * k;
+                    if (ns > remaining) break;
+                    if (k > 0) plates[t.weight] = (plates[t.weight] || 0) + k;
+                    dfs(idx + 1, remaining - ns, plates, count + k);
+                    if (k > 0) { plates[t.weight] -= k; if (plates[t.weight] === 0) delete plates[t.weight]; }
+                }
+            }
+
+            dfs(0, targetUnits, {}, 0);
+            return best;
+        }
+
+        function solvePlateCombinations(neededWeightPerSide, inventoryDivisor, inventory, balanceSides = false) {
             const SCALE = 100;
             const targetUnits = Math.max(0, Math.round(neededWeightPerSide * SCALE));
 
@@ -536,17 +569,38 @@
                 dp = nextDp;
             }
 
+            // In pair mode rank solutions by side balance first (<= 1.5 kg), then by smallest diff
+            const finalize = (solutions, exact) => {
+                if (!balanceSides) return { exact, solutions };
+                const TOL_UNITS = 150; // 1.5 kg
+                const ranked = solutions.map(sol => {
+                    const bb = bestBalancedCombo(availablePerSide, Math.round(sol.sideWeight * SCALE));
+                    return {
+                        ...sol,
+                        plates: bb ? bb.plates : sol.plates,
+                        plateCount: bb ? bb.count : sol.plateCount,
+                        imb: bb ? bb.imb : Infinity
+                    };
+                });
+                ranked.sort((a, b) => {
+                    const aBal = a.imb <= TOL_UNITS ? 0 : 1;
+                    const bBal = b.imb <= TOL_UNITS ? 0 : 1;
+                    if (aBal !== bBal) return aBal - bBal;
+                    const d = Math.abs(a.diffUnits) - Math.abs(b.diffUnits);
+                    if (d !== 0) return d;
+                    return a.imb - b.imb;
+                });
+                return { exact, solutions: ranked };
+            };
+
             // 1. Peso esatto trovato
             if (dp.has(targetUnits)) {
-                return {
-                    exact: true,
-                    solutions: [{
-                        sideWeight: targetUnits / SCALE,
-                        plates: dp.get(targetUnits).plates,
-                        plateCount: dp.get(targetUnits).count,
-                        diffUnits: 0
-                    }]
-                };
+                return finalize([{
+                    sideWeight: targetUnits / SCALE,
+                    plates: dp.get(targetUnits).plates,
+                    plateCount: dp.get(targetUnits).count,
+                    diffUnits: 0
+                }], true);
             }
 
             // 2. Migliore approssimazione per difetto e per eccesso
@@ -589,10 +643,7 @@
                 solutions.push(bestOver);
             }
 
-            return {
-                exact: false,
-                solutions
-            };
+            return finalize(solutions, false);
         }
 
         // =========================================================================
@@ -657,7 +708,7 @@
             // Pair mode solves per dumbbell (its sides may be unbalanced); other modes solve per side
             const solveWeight = isPair ? platesNeededPerUnit : platesNeededPerUnit / cfg.sidesPerUnit;
 
-            const result = solvePlateCombinations(solveWeight, cfg.inventoryDivisor, appState.inventory);
+            const result = solvePlateCombinations(solveWeight, cfg.inventoryDivisor, appState.inventory, isPair);
 
             if (appState.selectedAlternativeIndex >= result.solutions.length) {
                 appState.selectedAlternativeIndex = 0;
