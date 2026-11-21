@@ -232,11 +232,11 @@
                 </div>
             </div>
 
-            <!-- Badge Extra per Coppia Manubri (Peso totale complessivo dei 2 manubri) -->
+            <!-- Badge Extra per Coppia Manubri (peso identico su ciascun manubrio) -->
             <div id="pairTotalBanner" class="hidden rounded-2xl px-3.5 py-2.5 bg-gym-elevated/80 border border-gym-border flex items-center justify-between">
                 <div class="flex items-center gap-2">
                     <span class="px-2 py-0.5 rounded-md bg-gym-accent text-black font-black text-[10px] uppercase">× 2 Manubri</span>
-                    <span class="text-xs font-semibold text-zinc-300">Carico totale sollevato:</span>
+                    <span class="text-xs font-semibold text-zinc-300">Peso identico per manubrio:</span>
                 </div>
                 <span id="pairGrandTotalValue" class="font-mono text-base font-black text-white">48 kg</span>
             </div>
@@ -390,7 +390,7 @@
                 tareKey: 'dumbbell',
                 tarePresets: [1.5, 2, 2.5, 5],
                 tareLabel: 'Tara Singolo Manubrio Vuoto',
-                targetLabel: 'Peso Target PER MANUBRIO',
+                targetLabel: 'Peso Totale Coppia Manubri (× 2)',
                 sidesPerUnit: 2,
                 unitsCount: 2,
                 inventoryDivisor: 4
@@ -609,7 +609,10 @@
 
         function recalculateAndRender() {
             const cfg = EQUIPMENT_CONFIG[appState.equipment];
-            const targetPerUnit = Math.max(0, parseFloat(appState.targetWeight) || 0);
+            const isPair = cfg.id === 'dumbbell_pair';
+            // Pair mode: input is the TOTAL weight of both dumbbells, split evenly
+            const targetTotal = Math.max(0, parseFloat(appState.targetWeight) || 0);
+            const targetPerUnit = isPair ? targetTotal / 2 : targetTotal;
             const tarePerUnit = getCurrentTare();
 
             // Peso dei dischi necessario su un singolo attrezzo (es. singolo bilanciere o singolo manubrio)
@@ -630,27 +633,28 @@
             const achievedPerUnit = tarePerUnit + achievedPlatesPerUnit;
             const diffPerUnit = Number((achievedPerUnit - targetPerUnit).toFixed(2));
 
-            // 1. Aggiorna Riepilogo Numerico
-            const isPair = cfg.id === 'dumbbell_pair';
-            document.getElementById('summaryTargetLabel').textContent = isPair ? 'Target / Man.' : 'Target';
-            document.getElementById('summaryAchievedLabel').textContent = isPair ? 'Manubrio' : 'Raggiunto';
-            document.getElementById('summaryTarget').textContent = `${formatKg(targetPerUnit)} kg`;
-            document.getElementById('summaryAchieved').textContent = `${formatKg(achievedPerUnit)} kg`;
+            // 1. Summary: in pair mode target and diff are shown on the TOTAL of both dumbbells
+            const diffTotal = Number((diffPerUnit * 2).toFixed(2));
+            const diffShown = isPair ? diffTotal : diffPerUnit;
+            document.getElementById('summaryTargetLabel').textContent = isPair ? 'Target Totale' : 'Target';
+            document.getElementById('summaryAchievedLabel').textContent = isPair ? 'Totale Raggiunto' : 'Raggiunto';
+            document.getElementById('summaryTarget').textContent = `${formatKg(isPair ? targetTotal : targetPerUnit)} kg`;
+            document.getElementById('summaryAchieved').textContent = `${formatKg(isPair ? achievedPerUnit * 2 : achievedPerUnit)} kg`;
 
             const diffEl = document.getElementById('summaryDiff');
-            if (diffPerUnit === 0) {
+            if (diffShown === 0) {
                 diffEl.textContent = '0 kg';
                 diffEl.className = 'font-mono text-lg font-extrabold text-emerald-400';
             } else {
-                diffEl.textContent = `${diffPerUnit > 0 ? '+' : ''}${formatKg(diffPerUnit)} kg`;
+                diffEl.textContent = `${diffShown > 0 ? '+' : ''}${formatKg(diffShown)} kg`;
                 diffEl.className = 'font-mono text-lg font-extrabold text-amber-400';
             }
 
-            // Banner Totale Complessivo per Coppia Manubri
+            // Banner per Coppia Manubri: carico identico su ciascun manubrio (sempre equamente distribuito)
             const pairBanner = document.getElementById('pairTotalBanner');
             if (isPair) {
                 pairBanner.classList.remove('hidden');
-                document.getElementById('pairGrandTotalValue').textContent = `${formatKg(achievedPerUnit * 2)} kg`;
+                document.getElementById('pairGrandTotalValue').textContent = `${formatKg(achievedPerUnit)} kg`;
             } else {
                 pairBanner.classList.add('hidden');
             }
@@ -680,7 +684,7 @@
                 subtitle.textContent = platesNeededPerUnit === 0
                     ? 'Usa solo l\'attrezzo scarico.'
                     : (isPair
-                        ? `Combinazione esatta trovata (set da 4 dischi uguali dal tuo inventario).`
+                        ? `Combinazione esatta: ${formatKg(achievedPerUnit * 2)} kg totali, ${formatKg(achievedPerUnit)} kg per manubrio (distribuiti equamente).`
                         : `Combinazione precisa trovata con i tuoi dischi disponibili.`);
                 altBox.classList.add('hidden');
             } else {
@@ -690,23 +694,23 @@
                 title.className = 'text-sm font-extrabold text-amber-300';
                 title.textContent = 'Inventario insufficiente per il peso esatto';
                 subtitle.textContent = isPair
-                    ? `Migliore approssimazione: ${formatKg(achievedPerUnit)} kg per manubrio (${diffPerUnit > 0 ? '+' : ''}${formatKg(diffPerUnit)} kg).`
+                    ? `Migliore approssimazione: ${formatKg(achievedPerUnit * 2)} kg totali (${formatKg(achievedPerUnit)} kg per manubrio, scarto ${diffTotal > 0 ? '+' : ''}${formatKg(diffTotal)} kg sul totale).`
                     : `Migliore approssimazione con i tuoi dischi: ${formatKg(achievedPerUnit)} kg (${diffPerUnit > 0 ? '+' : ''}${formatKg(diffPerUnit)} kg).`;
 
                 if (result.solutions.length > 1) {
                     altBox.classList.remove('hidden');
                     altList.innerHTML = result.solutions.map((sol, idx) => {
                         const solUnitTotal = tarePerUnit + sol.sideWeight * cfg.sidesPerUnit;
-                        const solDiff = Number((solUnitTotal - targetPerUnit).toFixed(2));
+                        const solDiff = Number(((solUnitTotal - targetPerUnit) * (isPair ? 2 : 1)).toFixed(2));
                         const isSelected = idx === appState.selectedAlternativeIndex;
                         return `
                             <button onclick="selectAlternative(${idx})" class="w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition ${isSelected ? 'bg-gym-accent/15 border-gym-accent text-white' : 'bg-gym-elevated/60 border-gym-border text-zinc-300 hover:bg-gym-elevated'}">
                                 <div>
-                                    <span class="font-mono font-extrabold text-sm">${formatKg(solUnitTotal)} kg</span>
-                                    <span class="text-xs text-zinc-400 ml-1.5">${isPair ? '/ manubrio' : ''} (${formatKg(sol.sideWeight)} kg/lato)</span>
+                                    <span class="font-mono font-extrabold text-sm">${formatKg(isPair ? solUnitTotal * 2 : solUnitTotal)} kg</span>
+                                    <span class="text-xs text-zinc-400 ml-1.5">${isPair ? `totali (${formatKg(solUnitTotal)} kg/manubrio)` : ''} (${formatKg(sol.sideWeight)} kg/lato)</span>
                                 </div>
                                 <span class="font-mono text-xs font-extrabold px-2 py-0.5 rounded-lg ${solDiff > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-sky-500/20 text-sky-300'}">
-                                    ${solDiff > 0 ? '+' : ''}${formatKg(solDiff)} kg
+                                    ${solDiff > 0 ? '+' : ''}${formatKg(solDiff)} kg${isPair ? ' tot' : ''}
                                 </span>
                             </button>
                         `;
@@ -1050,7 +1054,8 @@
         }
 
         function resetTarget() {
-            const base = getCurrentTare();
+            const cfg = EQUIPMENT_CONFIG[appState.equipment];
+            const base = getCurrentTare() * cfg.unitsCount;
             appState.targetWeight = base;
             appState.selectedAlternativeIndex = 0;
             document.getElementById('targetInput').value = base;
@@ -1070,8 +1075,8 @@
             if (prevCfg && prevCfg.tareKey !== cfg.tareKey) {
                 const currentTarget = parseFloat(appState.targetWeight) || 0;
                 if (cfg.tareKey === 'dumbbell' && currentTarget > 60) {
-                    appState.targetWeight = 16;
-                    document.getElementById('targetInput').value = 16;
+                    appState.targetWeight = cfg.id === 'dumbbell_pair' ? 32 : 16;
+                    document.getElementById('targetInput').value = appState.targetWeight;
                 } else if (cfg.tareKey === 'barbell' && currentTarget < 15) {
                     appState.targetWeight = 60;
                     document.getElementById('targetInput').value = 60;
