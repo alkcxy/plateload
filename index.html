@@ -357,7 +357,7 @@
         // Configurazione delle 4 modalità attrezzo:
         // sidesPerUnit: lati simmetrici su un singolo attrezzo (2 per bilanciere/manubrio, 1 per perno)
         // unitsCount: quanti attrezzi vengono caricati contemporaneamente (1 o 2 per coppia manubri)
-        // inventoryDivisor: numero totale di dischi uguali richiesti per ogni singolo incremento per lato (2, 4 o 1)
+        // inventoryDivisor: identical plates required per increment on a single unit (2 for barbell/dumbbells, 1 for pin)
         const EQUIPMENT_CONFIG = {
             barbell: {
                 id: 'barbell',
@@ -393,7 +393,7 @@
                 targetLabel: 'Peso Totale Coppia Manubri (× 2)',
                 sidesPerUnit: 2,
                 unitsCount: 2,
-                inventoryDivisor: 4
+                inventoryDivisor: 2
             },
             single_pin: {
                 id: 'single_pin',
@@ -496,10 +496,10 @@
             const SCALE = 100;
             const targetUnits = Math.max(0, Math.round(neededWeightPerSide * SCALE));
 
-            // Calcola quanti dischi sono disponibili su UN SINGOLO LATO del singolo attrezzo:
-            // - Bilanciere / Manubrio Singolo: divisor = 2 (serve 1 coppia per aggiungere 1 disco per lato)
-            // - Coppia Manubri: divisor = 4 (servono 4 dischi uguali per aggiungere 1 disco per lato su entrambi i manubri)
-            // - Perno Singolo: divisor = 1 (ogni disco è usabile direttamente)
+            // Plates available per solved unit:
+            // - Barbell / single dumbbell: divisor = 2 (a pair adds one plate per side)
+            // - Dumbbell pair: divisor = 2 (a pair adds one plate per dumbbell; its two sides may be unbalanced)
+            // - Single pin: divisor = 1 (each plate is used directly)
             const availablePerSide = inventory
                 .map(item => ({
                     weight: item.weight,
@@ -607,6 +607,43 @@
             return Math.max(0, parseFloat(appState.tares[cfg.tareKey]) || 0);
         }
 
+        // Split a per-dumbbell plate map into its two sides minimizing the imbalance (subset-sum partition).
+        // The residual side imbalance is allowed in pair mode.
+        function splitSides(platesMap) {
+            const SCALE = 100;
+            const items = [];
+            Object.keys(platesMap).forEach(w => {
+                const weight = Number(w);
+                for (let i = 0; i < platesMap[weight]; i++) items.push(weight);
+            });
+            const totalUnits = items.reduce((acc, w) => acc + Math.round(w * SCALE), 0);
+            const halfUnits = Math.floor(totalUnits / 2);
+
+            const reach = new Map([[0, {}]]); // sumUnits -> plate map of one side
+            for (const w of items) {
+                const u = Math.round(w * SCALE);
+                for (const [sum, plates] of [...reach.entries()]) {
+                    const ns = sum + u;
+                    if (ns > halfUnits || reach.has(ns)) continue;
+                    const np = { ...plates };
+                    np[w] = (np[w] || 0) + 1;
+                    reach.set(ns, np);
+                }
+            }
+
+            let bestSum = 0, bestPlates = {};
+            for (const [sum, plates] of reach.entries()) {
+                if (sum > bestSum) { bestSum = sum; bestPlates = plates; }
+            }
+
+            const right = {};
+            Object.keys(platesMap).forEach(w => {
+                const remaining = platesMap[w] - (bestPlates[w] || 0);
+                if (remaining > 0) right[w] = remaining;
+            });
+            return { left: bestPlates, right, leftW: bestSum / SCALE, rightW: (totalUnits - bestSum) / SCALE };
+        }
+
         function recalculateAndRender() {
             const cfg = EQUIPMENT_CONFIG[appState.equipment];
             const isPair = cfg.id === 'dumbbell_pair';
@@ -615,12 +652,12 @@
             const targetPerUnit = isPair ? targetTotal / 2 : targetTotal;
             const tarePerUnit = getCurrentTare();
 
-            // Peso dei dischi necessario su un singolo attrezzo (es. singolo bilanciere o singolo manubrio)
+            // Plate weight needed on a single unit (barbell or single dumbbell)
             const platesNeededPerUnit = Math.max(0, targetPerUnit - tarePerUnit);
-            // Peso dei dischi necessario su ciascun lato di quel singolo attrezzo
-            const neededPerSide = platesNeededPerUnit / cfg.sidesPerUnit;
+            // Pair mode solves per dumbbell (its sides may be unbalanced); other modes solve per side
+            const solveWeight = isPair ? platesNeededPerUnit : platesNeededPerUnit / cfg.sidesPerUnit;
 
-            const result = solvePlateCombinations(neededPerSide, cfg.inventoryDivisor, appState.inventory);
+            const result = solvePlateCombinations(solveWeight, cfg.inventoryDivisor, appState.inventory);
 
             if (appState.selectedAlternativeIndex >= result.solutions.length) {
                 appState.selectedAlternativeIndex = 0;
@@ -628,8 +665,8 @@
 
             const activeSolution = result.solutions[appState.selectedAlternativeIndex] || { sideWeight: 0, plates: {}, plateCount: 0 };
 
-            // Peso effettivamente raggiunto per singolo attrezzo
-            const achievedPlatesPerUnit = activeSolution.sideWeight * cfg.sidesPerUnit;
+            // Plate weight actually achieved on a single unit
+            const achievedPlatesPerUnit = isPair ? activeSolution.sideWeight : activeSolution.sideWeight * cfg.sidesPerUnit;
             const achievedPerUnit = tarePerUnit + achievedPlatesPerUnit;
             const diffPerUnit = Number((achievedPerUnit - targetPerUnit).toFixed(2));
 
@@ -707,7 +744,7 @@
                             <button onclick="selectAlternative(${idx})" class="w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition ${isSelected ? 'bg-gym-accent/15 border-gym-accent text-white' : 'bg-gym-elevated/60 border-gym-border text-zinc-300 hover:bg-gym-elevated'}">
                                 <div>
                                     <span class="font-mono font-extrabold text-sm">${formatKg(isPair ? solUnitTotal * 2 : solUnitTotal)} kg</span>
-                                    <span class="text-xs text-zinc-400 ml-1.5">${isPair ? `totali (${formatKg(solUnitTotal)} kg/manubrio)` : ''} (${formatKg(sol.sideWeight)} kg/lato)</span>
+                                    <span class="text-xs text-zinc-400 ml-1.5">${isPair ? `totali (${formatKg(sol.sideWeight)} kg/manubrio)` : `(${formatKg(sol.sideWeight)} kg/lato)`}</span>
                                 </div>
                                 <span class="font-mono text-xs font-extrabold px-2 py-0.5 rounded-lg ${solDiff > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-sky-500/20 text-sky-300'}">
                                     ${solDiff > 0 ? '+' : ''}${formatKg(solDiff)} kg${isPair ? ' tot' : ''}
@@ -730,9 +767,13 @@
                 document.getElementById('weightPerSideLabel').textContent = `${formatKg(activeSolution.sideWeight)} kg / lato`;
                 document.getElementById('listHeaderTitle').textContent = 'Dischi per CIASCUN LATO del manubrio';
             } else if (cfg.id === 'dumbbell_pair') {
-                document.getElementById('visualSideLabel').textContent = 'Schema Singolo Manubrio (× 2 MANUBRI)';
-                document.getElementById('weightPerSideLabel').textContent = `${formatKg(activeSolution.sideWeight)} kg / lato`;
-                document.getElementById('listHeaderTitle').textContent = 'Per OGNI LATO di ciascun manubrio';
+                const split = splitSides(activeSolution.plates);
+                const imbalance = Number(Math.abs(split.leftW - split.rightW).toFixed(2));
+                document.getElementById('visualSideLabel').textContent = 'Schema Singolo Manubrio (× 2 MANUBRI identici)';
+                document.getElementById('weightPerSideLabel').textContent = imbalance === 0
+                    ? `${formatKg(split.leftW)} kg / lato`
+                    : `${formatKg(split.leftW)} / ${formatKg(split.rightW)} kg per lato (sbil. ${formatKg(imbalance)} kg)`;
+                document.getElementById('listHeaderTitle').textContent = 'Dischi per CIASCUN MANUBRIO (lati sbilanciabili)';
             } else {
                 document.getElementById('visualSideLabel').textContent = 'Carico su Perno Singolo';
                 document.getElementById('weightPerSideLabel').textContent = `${formatKg(activeSolution.sideWeight)} kg totali`;
@@ -740,10 +781,10 @@
             }
 
             // 4. Renderizza Lista Dischi & Visualizzatore Grafico
-            renderPlatesVisualAndList(activeSolution.plates, cfg);
+            renderPlatesVisualAndList(activeSolution.plates, cfg, isPair ? splitSides(activeSolution.plates) : null);
         }
 
-        function renderPlatesVisualAndList(platesMap, cfg) {
+        function renderPlatesVisualAndList(platesMap, cfg, pairSplit) {
             const visualizer = document.getElementById('barbellVisualizer');
             const listContainer = document.getElementById('platesListContainer');
             const totalBadge = document.getElementById('totalDischiUsatiBadge');
@@ -758,7 +799,7 @@
 
             const totalPlatesAllSides = totalPlatesPerSide * cfg.inventoryDivisor;
             if (cfg.id === 'dumbbell_pair') {
-                totalBadge.textContent = `${totalPlatesPerSide}/lato (${totalPlatesAllSides} tot su 2 man.)`;
+                totalBadge.textContent = `${totalPlatesPerSide}/manubrio (${totalPlatesAllSides} tot su 2 man.)`;
             } else if (cfg.sidesPerUnit === 2) {
                 totalBadge.textContent = `${totalPlatesPerSide}/lato (${totalPlatesAllSides} tot)`;
             } else {
@@ -770,8 +811,11 @@
             let barHtml = '';
 
             if (isDumbbell) {
-                // Disegno Manubrio Completo (Lato Sinistro + Impugnatura + Lato Destro)
-                const reverseWeights = [...sortedWeights].reverse(); // Dal più leggero (esterno) al più pesante (interno)
+                // Dumbbell drawing (left side + handle + right side); in pair mode the two sides come from the split
+                const leftMap = pairSplit ? pairSplit.left : platesMap;
+                const rightMap = pairSplit ? pairSplit.right : platesMap;
+                const leftWeights = Object.keys(leftMap).map(Number).filter(w => leftMap[w] > 0).sort((a, b) => a - b); // lightest outermost
+                const rightWeights = Object.keys(rightMap).map(Number).filter(w => rightMap[w] > 0).sort((a, b) => b - a); // heaviest innermost
 
                 barHtml += `<div class="w-full flex items-center justify-center gap-0.5 relative">`;
                 if (cfg.id === 'dumbbell_pair') {
@@ -782,8 +826,8 @@
                 barHtml += `<div class="h-4 w-4 bg-gradient-to-b from-zinc-300 via-zinc-400 to-zinc-600 rounded-l-sm shrink-0"></div>`;
 
                 // Dischi lato sinistro (dall'esterno verso l'interno)
-                reverseWeights.forEach(weight => {
-                    const count = platesMap[weight];
+                leftWeights.forEach(weight => {
+                    const count = leftMap[weight];
                     const style = getPlateStyle(weight);
                     for (let i = 0; i < count; i++) {
                         barHtml += `
@@ -804,8 +848,8 @@
                 `;
 
                 // Dischi lato destro (dall'interno verso l'esterno)
-                sortedWeights.forEach(weight => {
-                    const count = platesMap[weight];
+                rightWeights.forEach(weight => {
+                    const count = rightMap[weight];
                     const style = getPlateStyle(weight);
                     for (let i = 0; i < count; i++) {
                         barHtml += `
@@ -870,11 +914,11 @@
                 const owned = invItem ? invItem.qty : 0;
 
                 const subLabel = cfg.id === 'dumbbell_pair'
-                    ? `${countPerSide * 2} per manubrio • ${totalUsedOfThis}/${owned} tot`
+                    ? `${countPerSide} per manubrio • ${totalUsedOfThis}/${owned} tot`
                     : `Usati: ${totalUsedOfThis} su ${owned} disponibili`;
 
                 const sideBadgeText = cfg.id === 'dumbbell_pair'
-                    ? 'per lato (×4 tot)'
+                    ? 'per manubrio (×2 tot)'
                     : (cfg.sidesPerUnit === 2 ? 'per lato' : 'totale');
 
                 return `
