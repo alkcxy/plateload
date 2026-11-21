@@ -393,7 +393,7 @@
                 targetLabel: 'Peso Totale Coppia Manubri (× 2)',
                 sidesPerUnit: 2,
                 unitsCount: 2,
-                inventoryDivisor: 2
+                inventoryDivisor: 4
             },
             single_pin: {
                 id: 'single_pin',
@@ -492,47 +492,14 @@
         // =========================================================================
         // ALGORITMO DI OTTIMIZZAZIONE COMBINATORIA (BOUNDED SUBSET SUM / DP)
         // =========================================================================
-        // Among all plate combos reaching exactly targetUnits, pick the one whose two sides
-        // can be split with the smallest imbalance (then fewest plates). Used in pair mode.
-        function bestBalancedCombo(availablePerSide, targetUnits) {
-            const SCALE = 100;
-            let best = null;
-            let evaluated = 0;
-            const MAX_EVALUATED = 20000;
-
-            function dfs(idx, remaining, plates, count) {
-                if (remaining === 0) {
-                    if (++evaluated > MAX_EVALUATED) return;
-                    const s = splitSides(plates);
-                    const imb = Math.round(Math.abs(s.leftW - s.rightW) * SCALE);
-                    if (!best || imb < best.imb || (imb === best.imb && count < best.count)) {
-                        best = { plates: { ...plates }, count, imb };
-                    }
-                    return;
-                }
-                if (idx >= availablePerSide.length) return;
-                const t = availablePerSide[idx];
-                for (let k = 0; k <= t.maxCount; k++) {
-                    const ns = t.units * k;
-                    if (ns > remaining) break;
-                    if (k > 0) plates[t.weight] = (plates[t.weight] || 0) + k;
-                    dfs(idx + 1, remaining - ns, plates, count + k);
-                    if (k > 0) { plates[t.weight] -= k; if (plates[t.weight] === 0) delete plates[t.weight]; }
-                }
-            }
-
-            dfs(0, targetUnits, {}, 0);
-            return best;
-        }
-
-        function solvePlateCombinations(neededWeightPerSide, inventoryDivisor, inventory, balanceSides = false) {
+        function solvePlateCombinations(neededWeightPerSide, inventoryDivisor, inventory) {
             const SCALE = 100;
             const targetUnits = Math.max(0, Math.round(neededWeightPerSide * SCALE));
 
             // Plates available per solved unit:
             // - Barbell / single dumbbell: divisor = 2 (a pair adds one plate per side)
-            // - Dumbbell pair: divisor = 2 (a pair adds one plate per dumbbell; its two sides may be unbalanced)
             // - Single pin: divisor = 1 (each plate is used directly)
+            // - Dumbbell pair is handled separately by solvePairMode (symmetric sides + optional extra plate)
             const availablePerSide = inventory
                 .map(item => ({
                     weight: item.weight,
@@ -569,38 +536,17 @@
                 dp = nextDp;
             }
 
-            // In pair mode rank solutions by side balance first (<= 1.5 kg), then by smallest diff
-            const finalize = (solutions, exact) => {
-                if (!balanceSides) return { exact, solutions };
-                const TOL_UNITS = 150; // 1.5 kg
-                const ranked = solutions.map(sol => {
-                    const bb = bestBalancedCombo(availablePerSide, Math.round(sol.sideWeight * SCALE));
-                    return {
-                        ...sol,
-                        plates: bb ? bb.plates : sol.plates,
-                        plateCount: bb ? bb.count : sol.plateCount,
-                        imb: bb ? bb.imb : Infinity
-                    };
-                });
-                ranked.sort((a, b) => {
-                    const aBal = a.imb <= TOL_UNITS ? 0 : 1;
-                    const bBal = b.imb <= TOL_UNITS ? 0 : 1;
-                    if (aBal !== bBal) return aBal - bBal;
-                    const d = Math.abs(a.diffUnits) - Math.abs(b.diffUnits);
-                    if (d !== 0) return d;
-                    return a.imb - b.imb;
-                });
-                return { exact, solutions: ranked };
-            };
-
             // 1. Peso esatto trovato
             if (dp.has(targetUnits)) {
-                return finalize([{
-                    sideWeight: targetUnits / SCALE,
-                    plates: dp.get(targetUnits).plates,
-                    plateCount: dp.get(targetUnits).count,
-                    diffUnits: 0
-                }], true);
+                return {
+                    exact: true,
+                    solutions: [{
+                        sideWeight: targetUnits / SCALE,
+                        plates: dp.get(targetUnits).plates,
+                        plateCount: dp.get(targetUnits).count,
+                        diffUnits: 0
+                    }]
+                };
             }
 
             // 2. Migliore approssimazione per difetto e per eccesso
@@ -643,7 +589,46 @@
                 solutions.push(bestOver);
             }
 
-            return finalize(solutions, false);
+            return {
+                exact: false,
+                solutions
+            };
+        }
+
+        // Pair mode: both dumbbells identical and each dumbbell's two sides carry the same plates.
+        // Only if the exact weight is missing, one extra plate (smallest possible) goes on a single side.
+        function solvePairMode(platesPerDumbbell, inventory) {
+            const SCALE = 100;
+            const targetUnits = Math.max(0, Math.round(platesPerDumbbell * SCALE));
+
+            // Symmetric part: per-side weight with sets of 4 identical plates across the pair
+            const sym = solvePlateCombinations(platesPerDumbbell / 2, 4, inventory);
+
+            // One extra plate per dumbbell needs 2 identical plates left after the symmetric part
+            const extraAvailable = new Set(
+                inventory
+                    .filter(i => i.qty - 4 * Math.floor(i.qty / 4) >= 2)
+                    .map(i => Math.round(i.weight * SCALE))
+            );
+
+            const candidates = sym.solutions.map(sol => {
+                const sideUnits = Math.round(sol.sideWeight * SCALE);
+                const residual = targetUnits - 2 * sideUnits; // >0: peso mancante, <0: sforo simmetrico
+                const valid = residual === 0 || (residual > 0 && extraAvailable.has(residual));
+                // The extra plate is placed only when actually available; otherwise the sides stay symmetric
+                const extraUnits = valid ? residual : 0;
+                return { ...sol, extraUnits, diffUnits: 2 * sideUnits + extraUnits - targetUnits };
+            });
+
+            const valid = candidates.filter(c => c.extraUnits > 0 || (c.diffUnits === 0 && sym.exact));
+            const pool = valid.length ? valid : candidates;
+            // Prefer no asymmetry, then the smallest extra plate, then the smallest total diff
+            pool.sort((a, b) => (a.extraUnits - b.extraUnits) || (Math.abs(a.diffUnits) - Math.abs(b.diffUnits)));
+
+            return {
+                exact: pool.length > 0 && pool[0].diffUnits === 0,
+                solutions: pool
+            };
         }
 
         // =========================================================================
@@ -658,43 +643,6 @@
             return Math.max(0, parseFloat(appState.tares[cfg.tareKey]) || 0);
         }
 
-        // Split a per-dumbbell plate map into its two sides minimizing the imbalance (subset-sum partition).
-        // The residual side imbalance is allowed in pair mode.
-        function splitSides(platesMap) {
-            const SCALE = 100;
-            const items = [];
-            Object.keys(platesMap).forEach(w => {
-                const weight = Number(w);
-                for (let i = 0; i < platesMap[weight]; i++) items.push(weight);
-            });
-            const totalUnits = items.reduce((acc, w) => acc + Math.round(w * SCALE), 0);
-            const halfUnits = Math.floor(totalUnits / 2);
-
-            const reach = new Map([[0, {}]]); // sumUnits -> plate map of one side
-            for (const w of items) {
-                const u = Math.round(w * SCALE);
-                for (const [sum, plates] of [...reach.entries()]) {
-                    const ns = sum + u;
-                    if (ns > halfUnits || reach.has(ns)) continue;
-                    const np = { ...plates };
-                    np[w] = (np[w] || 0) + 1;
-                    reach.set(ns, np);
-                }
-            }
-
-            let bestSum = 0, bestPlates = {};
-            for (const [sum, plates] of reach.entries()) {
-                if (sum > bestSum) { bestSum = sum; bestPlates = plates; }
-            }
-
-            const right = {};
-            Object.keys(platesMap).forEach(w => {
-                const remaining = platesMap[w] - (bestPlates[w] || 0);
-                if (remaining > 0) right[w] = remaining;
-            });
-            return { left: bestPlates, right, leftW: bestSum / SCALE, rightW: (totalUnits - bestSum) / SCALE };
-        }
-
         function recalculateAndRender() {
             const cfg = EQUIPMENT_CONFIG[appState.equipment];
             const isPair = cfg.id === 'dumbbell_pair';
@@ -705,19 +653,22 @@
 
             // Plate weight needed on a single unit (barbell or single dumbbell)
             const platesNeededPerUnit = Math.max(0, targetPerUnit - tarePerUnit);
-            // Pair mode solves per dumbbell (its sides may be unbalanced); other modes solve per side
-            const solveWeight = isPair ? platesNeededPerUnit : platesNeededPerUnit / cfg.sidesPerUnit;
 
-            const result = solvePlateCombinations(solveWeight, cfg.inventoryDivisor, appState.inventory, isPair);
+            // Pair mode: symmetric sides per dumbbell + at most one extra plate on a single side
+            const result = isPair
+                ? solvePairMode(platesNeededPerUnit, appState.inventory)
+                : solvePlateCombinations(platesNeededPerUnit / cfg.sidesPerUnit, cfg.inventoryDivisor, appState.inventory);
 
             if (appState.selectedAlternativeIndex >= result.solutions.length) {
                 appState.selectedAlternativeIndex = 0;
             }
 
-            const activeSolution = result.solutions[appState.selectedAlternativeIndex] || { sideWeight: 0, plates: {}, plateCount: 0 };
+            const activeSolution = result.solutions[appState.selectedAlternativeIndex] || { sideWeight: 0, plates: {}, plateCount: 0, extraUnits: 0 };
 
             // Plate weight actually achieved on a single unit
-            const achievedPlatesPerUnit = isPair ? activeSolution.sideWeight : activeSolution.sideWeight * cfg.sidesPerUnit;
+            const achievedPlatesPerUnit = isPair
+                ? 2 * activeSolution.sideWeight + (activeSolution.extraUnits || 0) / 100
+                : activeSolution.sideWeight * cfg.sidesPerUnit;
             const achievedPerUnit = tarePerUnit + achievedPlatesPerUnit;
             const diffPerUnit = Number((achievedPerUnit - targetPerUnit).toFixed(2));
 
@@ -772,7 +723,7 @@
                 subtitle.textContent = platesNeededPerUnit === 0
                     ? 'Usa solo l\'attrezzo scarico.'
                     : (isPair
-                        ? `Combinazione esatta: ${formatKg(achievedPerUnit * 2)} kg totali, ${formatKg(achievedPerUnit)} kg per manubrio (distribuiti equamente).`
+                        ? `Combinazione esatta: ${formatKg(achievedPerUnit * 2)} kg totali, ${formatKg(achievedPerUnit)} kg per manubrio (lati simmetrici${(activeSolution.extraUnits || 0) > 0 ? ` + ${formatKg(activeSolution.extraUnits / 100)} kg su un lato` : ''}).`
                         : `Combinazione precisa trovata con i tuoi dischi disponibili.`);
                 altBox.classList.add('hidden');
             } else {
@@ -788,14 +739,16 @@
                 if (result.solutions.length > 1) {
                     altBox.classList.remove('hidden');
                     altList.innerHTML = result.solutions.map((sol, idx) => {
-                        const solUnitTotal = tarePerUnit + sol.sideWeight * cfg.sidesPerUnit;
+                        const solUnitTotal = isPair
+                            ? tarePerUnit + 2 * sol.sideWeight + (sol.extraUnits || 0) / 100
+                            : tarePerUnit + sol.sideWeight * cfg.sidesPerUnit;
                         const solDiff = Number(((solUnitTotal - targetPerUnit) * (isPair ? 2 : 1)).toFixed(2));
                         const isSelected = idx === appState.selectedAlternativeIndex;
                         return `
                             <button onclick="selectAlternative(${idx})" class="w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition ${isSelected ? 'bg-gym-accent/15 border-gym-accent text-white' : 'bg-gym-elevated/60 border-gym-border text-zinc-300 hover:bg-gym-elevated'}">
                                 <div>
                                     <span class="font-mono font-extrabold text-sm">${formatKg(isPair ? solUnitTotal * 2 : solUnitTotal)} kg</span>
-                                    <span class="text-xs text-zinc-400 ml-1.5">${isPair ? `totali (${formatKg(sol.sideWeight)} kg/manubrio)` : `(${formatKg(sol.sideWeight)} kg/lato)`}</span>
+                                    <span class="text-xs text-zinc-400 ml-1.5">${isPair ? `totali (${formatKg(sol.sideWeight)} kg/lato${sol.extraUnits ? ` +${formatKg(sol.extraUnits / 100)} kg su un lato` : ''})` : `(${formatKg(sol.sideWeight)} kg/lato)`}</span>
                                 </div>
                                 <span class="font-mono text-xs font-extrabold px-2 py-0.5 rounded-lg ${solDiff > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-sky-500/20 text-sky-300'}">
                                     ${solDiff > 0 ? '+' : ''}${formatKg(solDiff)} kg${isPair ? ' tot' : ''}
@@ -818,13 +771,12 @@
                 document.getElementById('weightPerSideLabel').textContent = `${formatKg(activeSolution.sideWeight)} kg / lato`;
                 document.getElementById('listHeaderTitle').textContent = 'Dischi per CIASCUN LATO del manubrio';
             } else if (cfg.id === 'dumbbell_pair') {
-                const split = splitSides(activeSolution.plates);
-                const imbalance = Number(Math.abs(split.leftW - split.rightW).toFixed(2));
+                const extra = Number(((activeSolution.extraUnits || 0) / 100).toFixed(2));
                 document.getElementById('visualSideLabel').textContent = 'Schema Singolo Manubrio (× 2 MANUBRI identici)';
-                document.getElementById('weightPerSideLabel').textContent = imbalance === 0
-                    ? `${formatKg(split.leftW)} kg / lato`
-                    : `${formatKg(split.leftW)} / ${formatKg(split.rightW)} kg per lato (sbil. ${formatKg(imbalance)} kg)`;
-                document.getElementById('listHeaderTitle').textContent = 'Dischi per CIASCUN MANUBRIO (lati sbilanciabili)';
+                document.getElementById('weightPerSideLabel').textContent = extra === 0
+                    ? `${formatKg(activeSolution.sideWeight)} kg / lato (simmetrico)`
+                    : `${formatKg(activeSolution.sideWeight + Math.max(0, extra))} / ${formatKg(activeSolution.sideWeight)} kg per lato (+${formatKg(extra)} kg su un lato)`;
+                document.getElementById('listHeaderTitle').textContent = 'Dischi per CIASCUN LATO (simmetrici) di ogni manubrio';
             } else {
                 document.getElementById('visualSideLabel').textContent = 'Carico su Perno Singolo';
                 document.getElementById('weightPerSideLabel').textContent = `${formatKg(activeSolution.sideWeight)} kg totali`;
@@ -832,10 +784,10 @@
             }
 
             // 4. Renderizza Lista Dischi & Visualizzatore Grafico
-            renderPlatesVisualAndList(activeSolution.plates, cfg, isPair ? splitSides(activeSolution.plates) : null);
+            renderPlatesVisualAndList(activeSolution.plates, cfg, isPair ? Math.max(0, (activeSolution.extraUnits || 0) / 100) : 0);
         }
 
-        function renderPlatesVisualAndList(platesMap, cfg, pairSplit) {
+        function renderPlatesVisualAndList(platesMap, cfg, pairExtra = 0) {
             const visualizer = document.getElementById('barbellVisualizer');
             const listContainer = document.getElementById('platesListContainer');
             const totalBadge = document.getElementById('totalDischiUsatiBadge');
@@ -850,7 +802,8 @@
 
             const totalPlatesAllSides = totalPlatesPerSide * cfg.inventoryDivisor;
             if (cfg.id === 'dumbbell_pair') {
-                totalBadge.textContent = `${totalPlatesPerSide}/manubrio (${totalPlatesAllSides} tot su 2 man.)`;
+                const extraPlates = pairExtra > 0 ? 2 : 0;
+                totalBadge.textContent = `${totalPlatesPerSide}/lato (${totalPlatesAllSides + extraPlates} tot su 2 man.)`;
             } else if (cfg.sidesPerUnit === 2) {
                 totalBadge.textContent = `${totalPlatesPerSide}/lato (${totalPlatesAllSides} tot)`;
             } else {
@@ -863,8 +816,10 @@
 
             if (isDumbbell) {
                 // Dumbbell drawing (left side + handle + right side); in pair mode the two sides come from the split
-                const leftMap = pairSplit ? pairSplit.left : platesMap;
-                const rightMap = pairSplit ? pairSplit.right : platesMap;
+                // In pair mode the optional extra plate goes on the left side only (smallest asymmetry)
+                const leftMap = { ...platesMap };
+                if (pairExtra > 0) leftMap[pairExtra] = (leftMap[pairExtra] || 0) + 1;
+                const rightMap = platesMap;
                 const leftWeights = Object.keys(leftMap).map(Number).filter(w => leftMap[w] > 0).sort((a, b) => a - b); // lightest outermost
                 const rightWeights = Object.keys(rightMap).map(Number).filter(w => rightMap[w] > 0).sort((a, b) => b - a); // heaviest innermost
 
@@ -965,11 +920,11 @@
                 const owned = invItem ? invItem.qty : 0;
 
                 const subLabel = cfg.id === 'dumbbell_pair'
-                    ? `${countPerSide} per manubrio • ${totalUsedOfThis}/${owned} tot`
+                    ? `${countPerSide * 2} per manubrio • ${totalUsedOfThis}/${owned} tot`
                     : `Usati: ${totalUsedOfThis} su ${owned} disponibili`;
 
                 const sideBadgeText = cfg.id === 'dumbbell_pair'
-                    ? 'per manubrio (×2 tot)'
+                    ? 'per lato (×4 tot)'
                     : (cfg.sidesPerUnit === 2 ? 'per lato' : 'totale');
 
                 return `
@@ -990,6 +945,28 @@
                     </div>
                 `;
             }).join('');
+
+            // In pair mode show the optional extra plate that goes on a single side only
+            if (cfg.id === 'dumbbell_pair' && pairExtra > 0) {
+                const xStyle = getPlateStyle(pairExtra);
+                listContainer.innerHTML += `
+                    <div class="flex items-center justify-between p-3 rounded-2xl bg-amber-500/10 border border-amber-500/40">
+                        <div class="flex items-center gap-3">
+                            <div class="w-11 h-11 rounded-xl ${xStyle.bg} ${xStyle.border} border-2 flex items-center justify-center shadow-md shrink-0">
+                                <span class="font-mono font-black text-sm ${xStyle.text}">${formatKg(pairExtra)}</span>
+                            </div>
+                            <div>
+                                <div class="font-extrabold text-sm text-amber-300">Disco extra da ${formatKg(pairExtra)} kg</div>
+                                <div class="text-[11px] text-zinc-400">1 solo su UN LATO di ciascun manubrio (2 tot) — asimmetria minima</div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="font-mono text-2xl font-black text-amber-400">1×</span>
+                            <span class="block text-[10px] font-bold uppercase text-zinc-400">un lato solo</span>
+                        </div>
+                    </div>
+                `;
+            }
         }
 
         // =========================================================================
