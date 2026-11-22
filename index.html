@@ -232,11 +232,11 @@
                 </div>
             </div>
 
-            <!-- Badge Extra per Coppia Manubri (Peso totale complessivo dei 2 manubri) -->
+            <!-- Badge Extra per Coppia Manubri (peso identico su ciascun manubrio) -->
             <div id="pairTotalBanner" class="hidden rounded-2xl px-3.5 py-2.5 bg-gym-elevated/80 border border-gym-border flex items-center justify-between">
                 <div class="flex items-center gap-2">
                     <span class="px-2 py-0.5 rounded-md bg-gym-accent text-black font-black text-[10px] uppercase">× 2 Manubri</span>
-                    <span class="text-xs font-semibold text-zinc-300">Carico totale sollevato:</span>
+                    <span class="text-xs font-semibold text-zinc-300">Peso identico per manubrio:</span>
                 </div>
                 <span id="pairGrandTotalValue" class="font-mono text-base font-black text-white">48 kg</span>
             </div>
@@ -348,6 +348,7 @@
         Salvato!
     </div>
 
+    <script src="solver.js"></script>
     <script>
         // =========================================================================
         // STATO DELL'APPLICAZIONE & CONFIGURAZIONE
@@ -357,7 +358,7 @@
         // Configurazione delle 4 modalità attrezzo:
         // sidesPerUnit: lati simmetrici su un singolo attrezzo (2 per bilanciere/manubrio, 1 per perno)
         // unitsCount: quanti attrezzi vengono caricati contemporaneamente (1 o 2 per coppia manubri)
-        // inventoryDivisor: numero totale di dischi uguali richiesti per ogni singolo incremento per lato (2, 4 o 1)
+        // inventoryDivisor: identical plates required per increment on a single unit (2 for barbell/dumbbells, 1 for pin)
         const EQUIPMENT_CONFIG = {
             barbell: {
                 id: 'barbell',
@@ -390,7 +391,7 @@
                 tareKey: 'dumbbell',
                 tarePresets: [1.5, 2, 2.5, 5],
                 tareLabel: 'Tara Singolo Manubrio Vuoto',
-                targetLabel: 'Peso Target PER MANUBRIO',
+                targetLabel: 'Peso Totale Coppia Manubri (× 2)',
                 sidesPerUnit: 2,
                 unitsCount: 2,
                 inventoryDivisor: 4
@@ -490,112 +491,6 @@
         }
 
         // =========================================================================
-        // ALGORITMO DI OTTIMIZZAZIONE COMBINATORIA (BOUNDED SUBSET SUM / DP)
-        // =========================================================================
-        function solvePlateCombinations(neededWeightPerSide, inventoryDivisor, inventory) {
-            const SCALE = 100;
-            const targetUnits = Math.max(0, Math.round(neededWeightPerSide * SCALE));
-
-            // Calcola quanti dischi sono disponibili su UN SINGOLO LATO del singolo attrezzo:
-            // - Bilanciere / Manubrio Singolo: divisor = 2 (serve 1 coppia per aggiungere 1 disco per lato)
-            // - Coppia Manubri: divisor = 4 (servono 4 dischi uguali per aggiungere 1 disco per lato su entrambi i manubri)
-            // - Perno Singolo: divisor = 1 (ogni disco è usabile direttamente)
-            const availablePerSide = inventory
-                .map(item => ({
-                    weight: item.weight,
-                    units: Math.round(item.weight * SCALE),
-                    maxCount: Math.floor(item.qty / inventoryDivisor)
-                }))
-                .filter(item => item.maxCount > 0 && item.units > 0)
-                .sort((a, b) => b.units - a.units);
-
-            const maxReachableUnits = availablePerSide.reduce((acc, p) => acc + p.units * p.maxCount, 0);
-            const largestPlateUnits = availablePerSide.length > 0 ? availablePerSide[0].units : 0;
-            const searchLimit = Math.min(maxReachableUnits, targetUnits + largestPlateUnits);
-
-            let dp = new Map();
-            dp.set(0, { count: 0, plates: {} });
-
-            for (const plate of availablePerSide) {
-                const nextDp = new Map(dp);
-                for (const [currentSum, combo] of dp.entries()) {
-                    for (let k = 1; k <= plate.maxCount; k++) {
-                        const newSum = currentSum + plate.units * k;
-                        if (newSum > searchLimit) break;
-
-                        const newCount = combo.count + k;
-                        const existing = nextDp.get(newSum);
-
-                        if (!existing || newCount < existing.count) {
-                            const newPlates = { ...combo.plates };
-                            newPlates[plate.weight] = (newPlates[plate.weight] || 0) + k;
-                            nextDp.set(newSum, { count: newCount, plates: newPlates });
-                        }
-                    }
-                }
-                dp = nextDp;
-            }
-
-            // 1. Peso esatto trovato
-            if (dp.has(targetUnits)) {
-                return {
-                    exact: true,
-                    solutions: [{
-                        sideWeight: targetUnits / SCALE,
-                        plates: dp.get(targetUnits).plates,
-                        plateCount: dp.get(targetUnits).count,
-                        diffUnits: 0
-                    }]
-                };
-            }
-
-            // 2. Migliore approssimazione per difetto e per eccesso
-            let bestUnder = null;
-            let bestOver = null;
-
-            for (const [sumUnits, combo] of dp.entries()) {
-                const diff = sumUnits - targetUnits;
-                if (diff < 0) {
-                    if (!bestUnder || diff > bestUnder.diffUnits) {
-                        bestUnder = {
-                            sideWeight: sumUnits / SCALE,
-                            plates: combo.plates,
-                            plateCount: combo.count,
-                            diffUnits: diff
-                        };
-                    }
-                } else if (diff > 0) {
-                    if (!bestOver || diff < bestOver.diffUnits) {
-                        bestOver = {
-                            sideWeight: sumUnits / SCALE,
-                            plates: combo.plates,
-                            plateCount: combo.count,
-                            diffUnits: diff
-                        };
-                    }
-                }
-            }
-
-            const solutions = [];
-            if (bestUnder && bestOver) {
-                if (Math.abs(bestUnder.diffUnits) <= Math.abs(bestOver.diffUnits)) {
-                    solutions.push(bestUnder, bestOver);
-                } else {
-                    solutions.push(bestOver, bestUnder);
-                }
-            } else if (bestUnder) {
-                solutions.push(bestUnder);
-            } else if (bestOver) {
-                solutions.push(bestOver);
-            }
-
-            return {
-                exact: false,
-                solutions
-            };
-        }
-
-        // =========================================================================
         // FUNZIONI DI AGGIORNAMENTO UI & CALCOLO
         // =========================================================================
         function formatKg(val) {
@@ -609,48 +504,55 @@
 
         function recalculateAndRender() {
             const cfg = EQUIPMENT_CONFIG[appState.equipment];
-            const targetPerUnit = Math.max(0, parseFloat(appState.targetWeight) || 0);
+            const isPair = cfg.id === 'dumbbell_pair';
+            // Pair mode: input is the TOTAL weight of both dumbbells, split evenly
+            const targetTotal = Math.max(0, parseFloat(appState.targetWeight) || 0);
+            const targetPerUnit = isPair ? targetTotal / 2 : targetTotal;
             const tarePerUnit = getCurrentTare();
 
-            // Peso dei dischi necessario su un singolo attrezzo (es. singolo bilanciere o singolo manubrio)
+            // Plate weight needed on a single unit (barbell or single dumbbell)
             const platesNeededPerUnit = Math.max(0, targetPerUnit - tarePerUnit);
-            // Peso dei dischi necessario su ciascun lato di quel singolo attrezzo
-            const neededPerSide = platesNeededPerUnit / cfg.sidesPerUnit;
 
-            const result = solvePlateCombinations(neededPerSide, cfg.inventoryDivisor, appState.inventory);
+            // Pair mode: symmetric sides per dumbbell + at most one extra plate on a single side
+            const result = isPair
+                ? solvePairMode(platesNeededPerUnit, appState.inventory)
+                : solvePlateCombinations(platesNeededPerUnit / cfg.sidesPerUnit, cfg.inventoryDivisor, appState.inventory);
 
             if (appState.selectedAlternativeIndex >= result.solutions.length) {
                 appState.selectedAlternativeIndex = 0;
             }
 
-            const activeSolution = result.solutions[appState.selectedAlternativeIndex] || { sideWeight: 0, plates: {}, plateCount: 0 };
+            const activeSolution = result.solutions[appState.selectedAlternativeIndex] || { sideWeight: 0, plates: {}, plateCount: 0, extraUnits: 0 };
 
-            // Peso effettivamente raggiunto per singolo attrezzo
-            const achievedPlatesPerUnit = activeSolution.sideWeight * cfg.sidesPerUnit;
+            // Plate weight actually achieved on a single unit
+            const achievedPlatesPerUnit = isPair
+                ? 2 * activeSolution.sideWeight + (activeSolution.extraUnits || 0) / 100
+                : activeSolution.sideWeight * cfg.sidesPerUnit;
             const achievedPerUnit = tarePerUnit + achievedPlatesPerUnit;
             const diffPerUnit = Number((achievedPerUnit - targetPerUnit).toFixed(2));
 
-            // 1. Aggiorna Riepilogo Numerico
-            const isPair = cfg.id === 'dumbbell_pair';
-            document.getElementById('summaryTargetLabel').textContent = isPair ? 'Target / Man.' : 'Target';
-            document.getElementById('summaryAchievedLabel').textContent = isPair ? 'Manubrio' : 'Raggiunto';
-            document.getElementById('summaryTarget').textContent = `${formatKg(targetPerUnit)} kg`;
-            document.getElementById('summaryAchieved').textContent = `${formatKg(achievedPerUnit)} kg`;
+            // 1. Summary: in pair mode target and diff are shown on the TOTAL of both dumbbells
+            const diffTotal = Number((diffPerUnit * 2).toFixed(2));
+            const diffShown = isPair ? diffTotal : diffPerUnit;
+            document.getElementById('summaryTargetLabel').textContent = isPair ? 'Target Totale' : 'Target';
+            document.getElementById('summaryAchievedLabel').textContent = isPair ? 'Totale Raggiunto' : 'Raggiunto';
+            document.getElementById('summaryTarget').textContent = `${formatKg(isPair ? targetTotal : targetPerUnit)} kg`;
+            document.getElementById('summaryAchieved').textContent = `${formatKg(isPair ? achievedPerUnit * 2 : achievedPerUnit)} kg`;
 
             const diffEl = document.getElementById('summaryDiff');
-            if (diffPerUnit === 0) {
+            if (diffShown === 0) {
                 diffEl.textContent = '0 kg';
                 diffEl.className = 'font-mono text-lg font-extrabold text-emerald-400';
             } else {
-                diffEl.textContent = `${diffPerUnit > 0 ? '+' : ''}${formatKg(diffPerUnit)} kg`;
+                diffEl.textContent = `${diffShown > 0 ? '+' : ''}${formatKg(diffShown)} kg`;
                 diffEl.className = 'font-mono text-lg font-extrabold text-amber-400';
             }
 
-            // Banner Totale Complessivo per Coppia Manubri
+            // Banner per Coppia Manubri: carico identico su ciascun manubrio (sempre equamente distribuito)
             const pairBanner = document.getElementById('pairTotalBanner');
             if (isPair) {
                 pairBanner.classList.remove('hidden');
-                document.getElementById('pairGrandTotalValue').textContent = `${formatKg(achievedPerUnit * 2)} kg`;
+                document.getElementById('pairGrandTotalValue').textContent = `${formatKg(achievedPerUnit)} kg`;
             } else {
                 pairBanner.classList.add('hidden');
             }
@@ -680,7 +582,7 @@
                 subtitle.textContent = platesNeededPerUnit === 0
                     ? 'Usa solo l\'attrezzo scarico.'
                     : (isPair
-                        ? `Combinazione esatta trovata (set da 4 dischi uguali dal tuo inventario).`
+                        ? `Combinazione esatta: ${formatKg(achievedPerUnit * 2)} kg totali, ${formatKg(achievedPerUnit)} kg per manubrio (lati simmetrici${(activeSolution.extraUnits || 0) > 0 ? ` + ${formatKg(activeSolution.extraUnits / 100)} kg su un lato` : ''}).`
                         : `Combinazione precisa trovata con i tuoi dischi disponibili.`);
                 altBox.classList.add('hidden');
             } else {
@@ -690,23 +592,25 @@
                 title.className = 'text-sm font-extrabold text-amber-300';
                 title.textContent = 'Inventario insufficiente per il peso esatto';
                 subtitle.textContent = isPair
-                    ? `Migliore approssimazione: ${formatKg(achievedPerUnit)} kg per manubrio (${diffPerUnit > 0 ? '+' : ''}${formatKg(diffPerUnit)} kg).`
+                    ? `Migliore approssimazione: ${formatKg(achievedPerUnit * 2)} kg totali (${formatKg(achievedPerUnit)} kg per manubrio, scarto ${diffTotal > 0 ? '+' : ''}${formatKg(diffTotal)} kg sul totale).`
                     : `Migliore approssimazione con i tuoi dischi: ${formatKg(achievedPerUnit)} kg (${diffPerUnit > 0 ? '+' : ''}${formatKg(diffPerUnit)} kg).`;
 
                 if (result.solutions.length > 1) {
                     altBox.classList.remove('hidden');
                     altList.innerHTML = result.solutions.map((sol, idx) => {
-                        const solUnitTotal = tarePerUnit + sol.sideWeight * cfg.sidesPerUnit;
-                        const solDiff = Number((solUnitTotal - targetPerUnit).toFixed(2));
+                        const solUnitTotal = isPair
+                            ? tarePerUnit + 2 * sol.sideWeight + (sol.extraUnits || 0) / 100
+                            : tarePerUnit + sol.sideWeight * cfg.sidesPerUnit;
+                        const solDiff = Number(((solUnitTotal - targetPerUnit) * (isPair ? 2 : 1)).toFixed(2));
                         const isSelected = idx === appState.selectedAlternativeIndex;
                         return `
                             <button onclick="selectAlternative(${idx})" class="w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition ${isSelected ? 'bg-gym-accent/15 border-gym-accent text-white' : 'bg-gym-elevated/60 border-gym-border text-zinc-300 hover:bg-gym-elevated'}">
                                 <div>
-                                    <span class="font-mono font-extrabold text-sm">${formatKg(solUnitTotal)} kg</span>
-                                    <span class="text-xs text-zinc-400 ml-1.5">${isPair ? '/ manubrio' : ''} (${formatKg(sol.sideWeight)} kg/lato)</span>
+                                    <span class="font-mono font-extrabold text-sm">${formatKg(isPair ? solUnitTotal * 2 : solUnitTotal)} kg</span>
+                                    <span class="text-xs text-zinc-400 ml-1.5">${isPair ? `totali (${formatKg(sol.sideWeight)} kg/lato${sol.extraUnits ? ` +${formatKg(sol.extraUnits / 100)} kg su un lato` : ''})` : `(${formatKg(sol.sideWeight)} kg/lato)`}</span>
                                 </div>
                                 <span class="font-mono text-xs font-extrabold px-2 py-0.5 rounded-lg ${solDiff > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-sky-500/20 text-sky-300'}">
-                                    ${solDiff > 0 ? '+' : ''}${formatKg(solDiff)} kg
+                                    ${solDiff > 0 ? '+' : ''}${formatKg(solDiff)} kg${isPair ? ' tot' : ''}
                                 </span>
                             </button>
                         `;
@@ -726,9 +630,12 @@
                 document.getElementById('weightPerSideLabel').textContent = `${formatKg(activeSolution.sideWeight)} kg / lato`;
                 document.getElementById('listHeaderTitle').textContent = 'Dischi per CIASCUN LATO del manubrio';
             } else if (cfg.id === 'dumbbell_pair') {
-                document.getElementById('visualSideLabel').textContent = 'Schema Singolo Manubrio (× 2 MANUBRI)';
-                document.getElementById('weightPerSideLabel').textContent = `${formatKg(activeSolution.sideWeight)} kg / lato`;
-                document.getElementById('listHeaderTitle').textContent = 'Per OGNI LATO di ciascun manubrio';
+                const extra = Number(((activeSolution.extraUnits || 0) / 100).toFixed(2));
+                document.getElementById('visualSideLabel').textContent = 'Schema Singolo Manubrio (× 2 MANUBRI identici)';
+                document.getElementById('weightPerSideLabel').textContent = extra === 0
+                    ? `${formatKg(activeSolution.sideWeight)} kg / lato (simmetrico)`
+                    : `${formatKg(activeSolution.sideWeight + Math.max(0, extra))} / ${formatKg(activeSolution.sideWeight)} kg per lato (+${formatKg(extra)} kg su un lato)`;
+                document.getElementById('listHeaderTitle').textContent = 'Dischi per CIASCUN LATO (simmetrici) di ogni manubrio';
             } else {
                 document.getElementById('visualSideLabel').textContent = 'Carico su Perno Singolo';
                 document.getElementById('weightPerSideLabel').textContent = `${formatKg(activeSolution.sideWeight)} kg totali`;
@@ -736,10 +643,10 @@
             }
 
             // 4. Renderizza Lista Dischi & Visualizzatore Grafico
-            renderPlatesVisualAndList(activeSolution.plates, cfg);
+            renderPlatesVisualAndList(activeSolution.plates, cfg, isPair ? Math.max(0, (activeSolution.extraUnits || 0) / 100) : 0);
         }
 
-        function renderPlatesVisualAndList(platesMap, cfg) {
+        function renderPlatesVisualAndList(platesMap, cfg, pairExtra = 0) {
             const visualizer = document.getElementById('barbellVisualizer');
             const listContainer = document.getElementById('platesListContainer');
             const totalBadge = document.getElementById('totalDischiUsatiBadge');
@@ -754,7 +661,8 @@
 
             const totalPlatesAllSides = totalPlatesPerSide * cfg.inventoryDivisor;
             if (cfg.id === 'dumbbell_pair') {
-                totalBadge.textContent = `${totalPlatesPerSide}/lato (${totalPlatesAllSides} tot su 2 man.)`;
+                const extraPlates = pairExtra > 0 ? 2 : 0;
+                totalBadge.textContent = `${totalPlatesPerSide}/lato (${totalPlatesAllSides + extraPlates} tot su 2 man.)`;
             } else if (cfg.sidesPerUnit === 2) {
                 totalBadge.textContent = `${totalPlatesPerSide}/lato (${totalPlatesAllSides} tot)`;
             } else {
@@ -766,8 +674,13 @@
             let barHtml = '';
 
             if (isDumbbell) {
-                // Disegno Manubrio Completo (Lato Sinistro + Impugnatura + Lato Destro)
-                const reverseWeights = [...sortedWeights].reverse(); // Dal più leggero (esterno) al più pesante (interno)
+                // Dumbbell drawing (left side + handle + right side); in pair mode the two sides come from the split
+                // In pair mode the optional extra plate goes on the left side only (smallest asymmetry)
+                const leftMap = { ...platesMap };
+                if (pairExtra > 0) leftMap[pairExtra] = (leftMap[pairExtra] || 0) + 1;
+                const rightMap = platesMap;
+                const leftWeights = Object.keys(leftMap).map(Number).filter(w => leftMap[w] > 0).sort((a, b) => a - b); // lightest outermost
+                const rightWeights = Object.keys(rightMap).map(Number).filter(w => rightMap[w] > 0).sort((a, b) => b - a); // heaviest innermost
 
                 barHtml += `<div class="w-full flex items-center justify-center gap-0.5 relative">`;
                 if (cfg.id === 'dumbbell_pair') {
@@ -778,8 +691,8 @@
                 barHtml += `<div class="h-4 w-4 bg-gradient-to-b from-zinc-300 via-zinc-400 to-zinc-600 rounded-l-sm shrink-0"></div>`;
 
                 // Dischi lato sinistro (dall'esterno verso l'interno)
-                reverseWeights.forEach(weight => {
-                    const count = platesMap[weight];
+                leftWeights.forEach(weight => {
+                    const count = leftMap[weight];
                     const style = getPlateStyle(weight);
                     for (let i = 0; i < count; i++) {
                         barHtml += `
@@ -800,8 +713,8 @@
                 `;
 
                 // Dischi lato destro (dall'interno verso l'esterno)
-                sortedWeights.forEach(weight => {
-                    const count = platesMap[weight];
+                rightWeights.forEach(weight => {
+                    const count = rightMap[weight];
                     const style = getPlateStyle(weight);
                     for (let i = 0; i < count; i++) {
                         barHtml += `
@@ -891,6 +804,28 @@
                     </div>
                 `;
             }).join('');
+
+            // In pair mode show the optional extra plate that goes on a single side only
+            if (cfg.id === 'dumbbell_pair' && pairExtra > 0) {
+                const xStyle = getPlateStyle(pairExtra);
+                listContainer.innerHTML += `
+                    <div class="flex items-center justify-between p-3 rounded-2xl bg-amber-500/10 border border-amber-500/40">
+                        <div class="flex items-center gap-3">
+                            <div class="w-11 h-11 rounded-xl ${xStyle.bg} ${xStyle.border} border-2 flex items-center justify-center shadow-md shrink-0">
+                                <span class="font-mono font-black text-sm ${xStyle.text}">${formatKg(pairExtra)}</span>
+                            </div>
+                            <div>
+                                <div class="font-extrabold text-sm text-amber-300">Disco extra da ${formatKg(pairExtra)} kg</div>
+                                <div class="text-[11px] text-zinc-400">1 solo su UN LATO di ciascun manubrio (2 tot) — asimmetria minima</div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="font-mono text-2xl font-black text-amber-400">1×</span>
+                            <span class="block text-[10px] font-bold uppercase text-zinc-400">un lato solo</span>
+                        </div>
+                    </div>
+                `;
+            }
         }
 
         // =========================================================================
@@ -1050,7 +985,8 @@
         }
 
         function resetTarget() {
-            const base = getCurrentTare();
+            const cfg = EQUIPMENT_CONFIG[appState.equipment];
+            const base = getCurrentTare() * cfg.unitsCount;
             appState.targetWeight = base;
             appState.selectedAlternativeIndex = 0;
             document.getElementById('targetInput').value = base;
@@ -1070,8 +1006,8 @@
             if (prevCfg && prevCfg.tareKey !== cfg.tareKey) {
                 const currentTarget = parseFloat(appState.targetWeight) || 0;
                 if (cfg.tareKey === 'dumbbell' && currentTarget > 60) {
-                    appState.targetWeight = 16;
-                    document.getElementById('targetInput').value = 16;
+                    appState.targetWeight = cfg.id === 'dumbbell_pair' ? 32 : 16;
+                    document.getElementById('targetInput').value = appState.targetWeight;
                 } else if (cfg.tareKey === 'barbell' && currentTarget < 15) {
                     appState.targetWeight = 60;
                     document.getElementById('targetInput').value = 60;

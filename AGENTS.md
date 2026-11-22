@@ -12,7 +12,8 @@ PlateLoad Pro — calcolatore dischi per palestra. App single-file, nessuna buil
 
 ## Comandi
 
-- Nessuna build, nessun test, nessun dépendance da installare: si apre `index.html` nel browser
+- Nessuna build, nessuna dépendance da installare: si apre `index.html` nel browser
+- Test del solver (senza dipendenze): `node test.mjs`
 - Per servire in locale durante lo sviluppo: `python3 -m http.server` dalla root del progetto
 
 ## Convenzioni
@@ -23,4 +24,6 @@ PlateLoad Pro — calcolatore dischi per palestra. App single-file, nessuna buil
 
 ## Mappa
 
-- `index.html` — tutta l'app (markup, stili, logica)
+- `index.html` — markup, stili e logica UI (carica `solver.js` via script tag)
+- `solver.js` — logica pura del calcolo dischi (condivisa con i test, esportata per Node)
+- `test.mjs` — test del solver, runnabile con `node test.mjs`
