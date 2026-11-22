@@ -282,13 +282,13 @@
 
             <!-- Preset Rapidi -->
             <div class="flex gap-2 overflow-x-auto no-scrollbar pb-2 mb-3">
-                <button onclick="applyPreset('home_dumbbells')" class="shrink-0 px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-gym-accent active:scale-95 transition">
+                <button data-preset="home_dumbbells" onclick="applyPreset('home_dumbbells')" class="shrink-0 px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-gym-accent active:scale-95 transition">
                     Kit Manubri + Bilanciere
                 </button>
-                <button onclick="applyPreset('home')" class="shrink-0 px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-zinc-200 active:scale-95 transition">
+                <button data-preset="home" onclick="applyPreset('home')" class="shrink-0 px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-zinc-200 active:scale-95 transition">
                     Home Gym Base
                 </button>
-                <button onclick="applyPreset('full')" class="shrink-0 px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-zinc-200 active:scale-95 transition">
+                <button data-preset="full" onclick="applyPreset('full')" class="shrink-0 px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-zinc-200 active:scale-95 transition">
                     Palestra Completa
                 </button>
                 <button onclick="applyPreset('clear')" class="shrink-0 px-3 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-900/50 text-xs font-bold text-red-300 active:scale-95 transition">
@@ -455,7 +455,50 @@
                 { weight: 1.25, qty: 4 },
                 { weight: 1,    qty: 4 },
                 { weight: 0.5,  qty: 4 }
+            ],
+            activePreset: 'custom',
+            presetInventories: { home_dumbbells: null, home: null, full: null, custom: null }
+        };
+
+        // Inventari predefiniti dei tre preset (usati se non c'e' un salvataggio personalizzato)
+        const PRESET_INVENTORIES = {
+            home_dumbbells: [
+                { weight: 20, qty: 2 },
+                { weight: 15, qty: 2 },
+                { weight: 10, qty: 2 },
+                { weight: 5, qty: 4 },
+                { weight: 2.5, qty: 4 },
+                { weight: 2, qty: 4 },
+                { weight: 1.25, qty: 4 },
+                { weight: 1, qty: 4 },
+                { weight: 0.5, qty: 4 }
+            ],
+            home: [
+                { weight: 20, qty: 2 },
+                { weight: 15, qty: 2 },
+                { weight: 10, qty: 2 },
+                { weight: 5, qty: 4 },
+                { weight: 2.5, qty: 2 },
+                { weight: 1.25, qty: 2 }
+            ],
+            full: [
+                { weight: 25, qty: 4 },
+                { weight: 20, qty: 6 },
+                { weight: 15, qty: 4 },
+                { weight: 10, qty: 4 },
+                { weight: 5, qty: 8 },
+                { weight: 2.5, qty: 4 },
+                { weight: 2, qty: 4 },
+                { weight: 1.5, qty: 4 },
+                { weight: 1.25, qty: 4 },
+                { weight: 1, qty: 4 },
+                { weight: 0.5, qty: 4 }
             ]
+        };
+        const PRESET_LABELS = {
+            home_dumbbells: 'Kit Manubri + Bilanciere caricato',
+            home: 'Preset Home Gym caricato',
+            full: 'Preset Palestra Completa caricato'
         };
 
         // Caricamento da localStorage (con migrazione compatibile dalla v1)
@@ -466,6 +509,15 @@
                     const parsed = JSON.parse(saved);
                     if (parsed && Array.isArray(parsed.inventory)) {
                         appState.inventory = parsed.inventory;
+                        if (parsed.presetInventories) {
+                            appState.presetInventories = { ...appState.presetInventories, ...parsed.presetInventories };
+                        }
+                        if (typeof parsed.activePreset === 'string' && appState.presetInventories[parsed.activePreset] !== undefined) {
+                            appState.activePreset = parsed.activePreset;
+                        }
+                        // Lo slot del preset attivo (se salvato) ha priorita' sull'inventario legacy
+                        const slot = appState.presetInventories[appState.activePreset];
+                        if (Array.isArray(slot)) appState.inventory = slot;
                         if (typeof parsed.targetWeight === 'number') appState.targetWeight = parsed.targetWeight;
                         if (parsed.equipment && EQUIPMENT_CONFIG[parsed.equipment]) {
                             appState.equipment = parsed.equipment;
@@ -484,6 +536,8 @@
 
         function saveState() {
             try {
+                // Ogni preset mantiene il proprio inventario salvato
+                appState.presetInventories[appState.activePreset] = JSON.parse(JSON.stringify(appState.inventory));
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
             } catch (e) {
                 console.warn('Impossibile salvare su localStorage:', e);
@@ -915,52 +969,30 @@
         }
 
         function applyPreset(type) {
-            if (type === 'home_dumbbells') {
-                appState.inventory = [
-                    { weight: 20, qty: 2 },
-                    { weight: 15, qty: 2 },
-                    { weight: 10, qty: 2 },
-                    { weight: 5, qty: 4 },
-                    { weight: 2.5, qty: 4 },
-                    { weight: 2, qty: 4 },
-                    { weight: 1.25, qty: 4 },
-                    { weight: 1, qty: 4 },
-                    { weight: 0.5, qty: 4 }
-                ];
-                showToast('Kit Manubri + Bilanciere caricato');
-            } else if (type === 'home') {
-                appState.inventory = [
-                    { weight: 20, qty: 2 },
-                    { weight: 15, qty: 2 },
-                    { weight: 10, qty: 2 },
-                    { weight: 5, qty: 4 },
-                    { weight: 2.5, qty: 2 },
-                    { weight: 1.25, qty: 2 }
-                ];
-                showToast('Preset Home Gym caricato');
-            } else if (type === 'full') {
-                appState.inventory = [
-                    { weight: 25, qty: 4 },
-                    { weight: 20, qty: 6 },
-                    { weight: 15, qty: 4 },
-                    { weight: 10, qty: 4 },
-                    { weight: 5, qty: 8 },
-                    { weight: 2.5, qty: 4 },
-                    { weight: 2, qty: 4 },
-                    { weight: 1.5, qty: 4 },
-                    { weight: 1.25, qty: 4 },
-                    { weight: 1, qty: 4 },
-                    { weight: 0.5, qty: 4 }
-                ];
-                showToast('Preset Palestra Completa caricato');
-            } else if (type === 'clear') {
+            if (type === 'clear') {
                 appState.inventory.forEach(i => i.qty = 0);
                 showToast('Inventario azzerato');
+            } else if (PRESET_INVENTORIES[type]) {
+                appState.activePreset = type;
+                const saved = appState.presetInventories[type];
+                appState.inventory = JSON.parse(JSON.stringify(saved || PRESET_INVENTORIES[type]));
+                showToast(PRESET_LABELS[type]);
             }
             appState.selectedAlternativeIndex = 0;
             saveState();
             renderInventory();
             recalculateAndRender();
+            renderPresetButtons();
+        }
+
+        // Evidenzia il pulsante del preset attivo
+        function renderPresetButtons() {
+            document.querySelectorAll('[data-preset]').forEach(btn => {
+                const active = btn.dataset.preset === appState.activePreset;
+                btn.classList.toggle('border-gym-accent', active);
+                btn.classList.toggle('text-gym-accent', active);
+                btn.classList.toggle('text-zinc-200', !active);
+            });
         }
 
         // =========================================================================
@@ -1180,6 +1212,7 @@
             document.getElementById('targetInput').value = appState.targetWeight;
             setEquipment(appState.equipment);
             renderInventory();
+            renderPresetButtons();
             recalculateAndRender();
         });
     </script>
