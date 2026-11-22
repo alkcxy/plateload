@@ -58,6 +58,16 @@
         .modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
         .btn-danger { background: #dc2626; color: #fff; }
         .btn-danger:hover { background: #ef4444; }
+        /* Frecce di scroll orizzontale per le righe dei preset */
+        .preset-scroll-btn {
+            position: absolute; top: 0; bottom: 0.5rem; width: 1.75rem; z-index: 10;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(24, 24, 27, 0.92); border: 1px solid #27272a; border-radius: 0.75rem;
+            color: #f4f4f5; font-size: 1.1rem; font-weight: 900; line-height: 1;
+        }
+        .preset-scroll-btn.left { left: 0; }
+        .preset-scroll-btn.right { right: 0; }
+        .preset-scroll-btn.hidden { display: none; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col max-w-lg mx-auto bg-gym-bg text-zinc-100 selection:bg-gym-accent selection:text-black pb-24">
@@ -296,8 +306,9 @@
                 </div>
             </div>
 
-            <!-- Preset Rapidi -->
-            <div class="flex flex-wrap gap-2 pb-2 mb-3">
+            <!-- Preset Rapidi (scrollabile orizzontalmente con frecce) -->
+            <div class="relative mb-3">
+            <div id="presetRow" class="flex gap-2 overflow-x-auto no-scrollbar pb-2">
                 <span class="flex items-center gap-1 shrink-0" data-preset-wrap>
                     <button data-preset="home_dumbbells" onclick="applyPreset('home_dumbbells')" class="px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-zinc-200 active:scale-95 transition">
                         Kit Manubri + Bilanciere
@@ -317,8 +328,15 @@
                     <button onclick="deletePreset('full')" title="Elimina preset" class="px-2 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-900/50 text-xs font-bold text-red-300 active:scale-95 transition">✕</button>
                 </span>
             </div>
+            <button id="presetRowLeft" onclick="scrollPresetRow('presetRow', -1)" class="preset-scroll-btn left hidden">‹</button>
+            <button id="presetRowRight" onclick="scrollPresetRow('presetRow', 1)" class="preset-scroll-btn right">›</button>
+            </div>
             <!-- Preset personalizzati creati dall'utente (generati via JS) -->
-            <div class="flex flex-wrap gap-2 pb-2" id="userPresetButtons"></div>
+            <div class="relative">
+                <div id="userPresetRow" class="flex gap-2 overflow-x-auto no-scrollbar pb-2"></div>
+                <button id="userPresetRowLeft" onclick="scrollPresetRow('userPresetRow', -1)" class="preset-scroll-btn left hidden">‹</button>
+                <button id="userPresetRowRight" onclick="scrollPresetRow('userPresetRow', 1)" class="preset-scroll-btn right hidden">›</button>
+            </div>
             <!-- Crea nuovo preset dall'inventario corrente -->
             <div class="flex gap-2 mb-3">
                 <input type="text" id="newPresetName" maxlength="24" placeholder="Nome del nuovo preset…"
@@ -1124,7 +1142,7 @@
                 const id = wrap.querySelector('[data-preset]')?.dataset.preset;
                 wrap.style.display = appState.hiddenPresets.includes(id) ? 'none' : '';
             });
-            const cont = document.getElementById('userPresetButtons');
+            const cont = document.getElementById('userPresetRow');
             cont.innerHTML = Object.entries(appState.userPresetMeta).map(([id, name]) => `
                 <span class="flex items-center gap-1 shrink-0">
                     <button data-preset="${id}" onclick="applyPreset('${id}')" class="px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-zinc-200 active:scale-95 transition">
@@ -1139,6 +1157,25 @@
                 btn.classList.toggle('border-gym-accent', active);
                 btn.classList.toggle('text-gym-accent', active);
                 btn.classList.toggle('text-zinc-200', !active);
+            });
+            updatePresetScrollButtons();
+        }
+
+        // Scroll orizzontale delle righe preset con frecce visibili
+        function scrollPresetRow(id, dir) {
+            const el = document.getElementById(id);
+            if (el) el.scrollBy({ left: dir * 180, behavior: 'smooth' });
+        }
+
+        function updatePresetScrollButtons() {
+            ['presetRow', 'userPresetRow'].forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const max = el.scrollWidth - el.clientWidth;
+                const left = document.getElementById(id + 'Left');
+                const right = document.getElementById(id + 'Right');
+                if (left) left.classList.toggle('hidden', el.scrollLeft <= 4);
+                if (right) right.classList.toggle('hidden', el.scrollLeft >= max - 4);
             });
         }
 
@@ -1371,6 +1408,13 @@
             document.getElementById('confirmModal').addEventListener('click', e => {
                 if (e.target.id === 'confirmModal') closeConfirmModal();
             });
+
+            ['presetRow', 'userPresetRow'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('scroll', updatePresetScrollButtons, { passive: true });
+            });
+            window.addEventListener('resize', updatePresetScrollButtons);
+            updatePresetScrollButtons();
         });
     </script>
 </body>
