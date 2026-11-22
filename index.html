@@ -1414,6 +1414,15 @@
                 if (el) el.addEventListener('scroll', updatePresetScrollButtons, { passive: true });
             });
             window.addEventListener('resize', updatePresetScrollButtons);
+            window.addEventListener('load', updatePresetScrollButtons);
+            if (document.fonts && document.fonts.ready) document.fonts.ready.then(updatePresetScrollButtons);
+            if (typeof ResizeObserver !== 'undefined') {
+                const ro = new ResizeObserver(updatePresetScrollButtons);
+                ['presetRow', 'userPresetRow'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) ro.observe(el);
+                });
+            }
             updatePresetScrollButtons();
         });
     </script>
