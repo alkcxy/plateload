@@ -291,9 +291,6 @@
                 <button data-preset="full" onclick="applyPreset('full')" class="shrink-0 px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-zinc-200 active:scale-95 transition">
                     Palestra Completa
                 </button>
-                <button onclick="applyPreset('clear')" class="shrink-0 px-3 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-900/50 text-xs font-bold text-red-300 active:scale-95 transition">
-                    Azzera Tutti
-                </button>
             </div>
             <!-- Preset personalizzati creati dall'utente (generati via JS) -->
             <div class="flex flex-wrap gap-2 pb-2" id="userPresetButtons"></div>
@@ -984,10 +981,7 @@
         }
 
         function applyPreset(type) {
-            if (type === 'clear') {
-                appState.inventory.forEach(i => i.qty = 0);
-                showToast('Inventario azzerato');
-            } else if (PRESET_INVENTORIES[type] || appState.userPresetMeta[type]) {
+            if (PRESET_INVENTORIES[type] || appState.userPresetMeta[type]) {
                 appState.activePreset = type;
                 const saved = appState.presetInventories[type];
                 const base = saved || PRESET_INVENTORIES[type];
@@ -1029,6 +1023,8 @@
 
         function deleteUserPreset(id) {
             if (!appState.userPresetMeta[id]) return;
+            const name = appState.userPresetMeta[id];
+            if (!window.confirm(`Eliminare il preset "${name}"?`)) return;
             delete appState.userPresetMeta[id];
             delete appState.presetInventories[id];
             if (appState.activePreset === id) {
@@ -1046,8 +1042,10 @@
 
         // Rimuove un taglio di dischi dall'inventario corrente (salvato nello slot del preset attivo)
         function removePlateType(index) {
+            const target = appState.inventory[index];
+            if (!target) return;
+            if (!window.confirm(`Rimuovere il taglio da ${formatKg(target.weight)} kg dall'inventario corrente?`)) return;
             const removed = appState.inventory.splice(index, 1)[0];
-            if (!removed) return;
             appState.selectedAlternativeIndex = 0;
             saveState();
             renderInventory();
