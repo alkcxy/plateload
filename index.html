@@ -294,7 +294,12 @@
                 <button onclick="applyPreset('clear')" class="shrink-0 px-3 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-900/50 text-xs font-bold text-red-300 active:scale-95 transition">
                     Azzera Tutti
                 </button>
+                <button onclick="saveCurrentAsPreset()" class="shrink-0 px-3 py-1.5 rounded-xl bg-gym-accent/15 hover:bg-gym-accent/25 border border-gym-accent/50 text-xs font-bold text-gym-accent active:scale-95 transition">
+                    ＋ Salva come preset
+                </button>
             </div>
+            <!-- Preset personalizzati creati dall'utente (generati via JS) -->
+            <div class="flex gap-2 overflow-x-auto no-scrollbar pb-2 mb-3" id="userPresetButtons"></div>
 
             <!-- Lista Controlli Quantità Dischi -->
             <div id="inventoryList" class="space-y-2.5">
@@ -457,7 +462,8 @@
                 { weight: 0.5,  qty: 4 }
             ],
             activePreset: 'custom',
-            presetInventories: { home_dumbbells: null, home: null, full: null, custom: null }
+            presetInventories: { home_dumbbells: null, home: null, full: null, custom: null },
+            userPresetMeta: {}
         };
 
         // Inventari predefiniti dei tre preset (usati se non c'e' un salvataggio personalizzato)
@@ -512,6 +518,7 @@
                         if (parsed.presetInventories) {
                             appState.presetInventories = { ...appState.presetInventories, ...parsed.presetInventories };
                         }
+                        if (parsed.userPresetMeta) appState.userPresetMeta = { ...parsed.userPresetMeta };
                         if (typeof parsed.activePreset === 'string' && appState.presetInventories[parsed.activePreset] !== undefined) {
                             appState.activePreset = parsed.activePreset;
                         }
@@ -917,6 +924,9 @@
                         </div>
 
                         <div class="flex items-center gap-2">
+                            <button onclick="removePlateType(${idx})" title="Rimuovi questo taglio" class="w-8 h-8 rounded-lg bg-red-950/40 hover:bg-red-900/50 border border-red-900/50 text-red-300 text-xs font-black active:scale-90 transition select-none">
+                                ✕
+                            </button>
                             <button onclick="updatePlateQty(${idx}, -1)" class="w-11 h-11 rounded-xl bg-black/60 hover:bg-zinc-900 border border-gym-border text-white font-black text-xl flex items-center justify-center active:scale-90 transition select-none">
                                 −
                             </button>
@@ -972,11 +982,12 @@
             if (type === 'clear') {
                 appState.inventory.forEach(i => i.qty = 0);
                 showToast('Inventario azzerato');
-            } else if (PRESET_INVENTORIES[type]) {
+            } else if (PRESET_INVENTORIES[type] || appState.userPresetMeta[type]) {
                 appState.activePreset = type;
                 const saved = appState.presetInventories[type];
-                appState.inventory = JSON.parse(JSON.stringify(saved || PRESET_INVENTORIES[type]));
-                showToast(PRESET_LABELS[type]);
+                const base = saved || PRESET_INVENTORIES[type];
+                appState.inventory = JSON.parse(JSON.stringify(base));
+                showToast(PRESET_LABELS[type] || `Preset "${appState.userPresetMeta[type]}" caricato`);
             }
             appState.selectedAlternativeIndex = 0;
             saveState();
@@ -985,7 +996,55 @@
             renderPresetButtons();
         }
 
-        // Evidenzia il pulsante del preset attivo
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        // Salva l'inventario corrente come nuovo preset personalizzato
+        function saveCurrentAsPreset() {
+            const name = (window.prompt('Nome del nuovo preset:') || '').trim();
+            if (!name) return;
+            const id = 'user_' + Date.now().toString(36);
+            appState.userPresetMeta[id] = name;
+            appState.presetInventories[id] = JSON.parse(JSON.stringify(appState.inventory));
+            appState.activePreset = id;
+            appState.selectedAlternativeIndex = 0;
+            saveState();
+            renderInventory();
+            recalculateAndRender();
+            renderPresetButtons();
+            showToast(`Preset "${name}" salvato`);
+        }
+
+        function deleteUserPreset(id) {
+            if (!appState.userPresetMeta[id]) return;
+            delete appState.userPresetMeta[id];
+            delete appState.presetInventories[id];
+            if (appState.activePreset === id) {
+                appState.activePreset = 'custom';
+                const custom = appState.presetInventories.custom;
+                if (Array.isArray(custom)) appState.inventory = JSON.parse(JSON.stringify(custom));
+            }
+            appState.selectedAlternativeIndex = 0;
+            saveState();
+            renderInventory();
+            recalculateAndRender();
+            renderPresetButtons();
+            showToast('Preset eliminato');
+        }
+
+        // Rimuove un taglio di dischi dall'inventario corrente (salvato nello slot del preset attivo)
+        function removePlateType(index) {
+            const removed = appState.inventory.splice(index, 1)[0];
+            if (!removed) return;
+            appState.selectedAlternativeIndex = 0;
+            saveState();
+            renderInventory();
+            recalculateAndRender();
+            showToast(`Taglio da ${formatKg(removed.weight)} kg rimosso`);
+        }
+
+        // Evidenzia il pulsante del preset attivo e mostra i preset personalizzati
         function renderPresetButtons() {
             document.querySelectorAll('[data-preset]').forEach(btn => {
                 const active = btn.dataset.preset === appState.activePreset;
@@ -993,6 +1052,15 @@
                 btn.classList.toggle('text-gym-accent', active);
                 btn.classList.toggle('text-zinc-200', !active);
             });
+            const cont = document.getElementById('userPresetButtons');
+            cont.innerHTML = Object.entries(appState.userPresetMeta).map(([id, name]) => `
+                <span class="flex items-center gap-1 shrink-0">
+                    <button data-preset="${id}" onclick="applyPreset('${id}')" class="px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-zinc-200 active:scale-95 transition">
+                        ${escapeHtml(name)}
+                    </button>
+                    <button onclick="deleteUserPreset('${id}')" title="Elimina preset" class="px-2 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-900/50 text-xs font-bold text-red-300 active:scale-95 transition">✕</button>
+                </span>
+            `).join('');
         }
 
         // =========================================================================
