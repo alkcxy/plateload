@@ -294,12 +294,17 @@
                 <button onclick="applyPreset('clear')" class="shrink-0 px-3 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-900/50 text-xs font-bold text-red-300 active:scale-95 transition">
                     Azzera Tutti
                 </button>
-                <button onclick="saveCurrentAsPreset()" class="shrink-0 px-3 py-1.5 rounded-xl bg-gym-accent/15 hover:bg-gym-accent/25 border border-gym-accent/50 text-xs font-bold text-gym-accent active:scale-95 transition">
-                    ＋ Salva come preset
-                </button>
             </div>
             <!-- Preset personalizzati creati dall'utente (generati via JS) -->
-            <div class="flex gap-2 overflow-x-auto no-scrollbar pb-2 mb-3" id="userPresetButtons"></div>
+            <div class="flex gap-2 overflow-x-auto no-scrollbar pb-2" id="userPresetButtons"></div>
+            <!-- Crea nuovo preset dall'inventario corrente -->
+            <div class="flex gap-2 mb-3">
+                <input type="text" id="newPresetName" maxlength="24" placeholder="Nome del nuovo preset…"
+                    class="flex-1 min-w-0 px-3 py-1.5 rounded-xl bg-black/50 border border-gym-border text-xs text-white placeholder:text-zinc-600 focus:border-gym-accent focus:outline-none">
+                <button onclick="saveCurrentAsPreset()" class="shrink-0 px-3 py-1.5 rounded-xl bg-gym-accent/15 hover:bg-gym-accent/25 border border-gym-accent/50 text-xs font-bold text-gym-accent active:scale-95 transition">
+                    ＋ Salva preset
+                </button>
+            </div>
 
             <!-- Lista Controlli Quantità Dischi -->
             <div id="inventoryList" class="space-y-2.5">
@@ -1002,8 +1007,14 @@
 
         // Salva l'inventario corrente come nuovo preset personalizzato
         function saveCurrentAsPreset() {
-            const name = (window.prompt('Nome del nuovo preset:') || '').trim();
-            if (!name) return;
+            const input = document.getElementById('newPresetName');
+            const name = (input.value || '').trim();
+            if (!name) {
+                showToast('Scrivi prima un nome per il preset');
+                input.focus();
+                return;
+            }
+            input.value = '';
             const id = 'user_' + Date.now().toString(36);
             appState.userPresetMeta[id] = name;
             appState.presetInventories[id] = JSON.parse(JSON.stringify(appState.inventory));
