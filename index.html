@@ -604,23 +604,20 @@
             // Symmetric part: per-side weight with sets of 4 identical plates across the pair
             const sym = solvePlateCombinations(platesPerDumbbell / 2, 4, inventory);
 
-            // One extra plate per dumbbell needs 2 identical plates left after the symmetric part
-            const extraAvailable = new Set(
-                inventory
-                    .filter(i => i.qty - 4 * Math.floor(i.qty / 4) >= 2)
-                    .map(i => Math.round(i.weight * SCALE))
-            );
-
             const candidates = sym.solutions.map(sol => {
                 const sideUnits = Math.round(sol.sideWeight * SCALE);
                 const residual = targetUnits - 2 * sideUnits; // >0: peso mancante, <0: sforo simmetrico
-                const valid = residual === 0 || (residual > 0 && extraAvailable.has(residual));
+                // One extra plate per dumbbell needs 2 identical plates of that weight left after
+                // the symmetric combo (which consumes 4 per plate per side across the pair)
+                const invItem = inventory.find(i => Math.round(i.weight * SCALE) === residual);
+                const leftover = invItem ? invItem.qty - 4 * (sol.plates[invItem.weight] || 0) : 0;
+                const valid = residual === 0 || (residual > 0 && leftover >= 2);
                 // The extra plate is placed only when actually available; otherwise the sides stay symmetric
                 const extraUnits = valid ? residual : 0;
                 return { ...sol, extraUnits, diffUnits: 2 * sideUnits + extraUnits - targetUnits };
             });
 
-            const valid = candidates.filter(c => c.extraUnits > 0 || (c.diffUnits === 0 && sym.exact));
+            const valid = candidates.filter(c => c.extraUnits > 0 || c.diffUnits === 0);
             const pool = valid.length ? valid : candidates;
             // Prefer no asymmetry, then the smallest extra plate, then the smallest total diff
             pool.sort((a, b) => (a.extraUnits - b.extraUnits) || (Math.abs(a.diffUnits) - Math.abs(b.diffUnits)));
