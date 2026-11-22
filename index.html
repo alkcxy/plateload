@@ -68,6 +68,14 @@
         .preset-scroll-btn.left { left: 0; }
         .preset-scroll-btn.right { right: 0; }
         .preset-scroll-btn.hidden { display: none; }
+        /* ✕ di eliminazione dentro il badge del preset */
+        .preset-del {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 1.05rem; height: 1.05rem; margin-left: 0.4rem; border-radius: 9999px;
+            background: rgba(153, 27, 27, 0.45); color: #fca5a5;
+            font-size: 0.6rem; font-weight: 900; line-height: 1; vertical-align: middle;
+        }
+        .preset-del:hover { background: rgba(220, 38, 38, 0.65); color: #fff; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col max-w-lg mx-auto bg-gym-bg text-zinc-100 selection:bg-gym-accent selection:text-black pb-24">
@@ -309,23 +317,20 @@
             <!-- Preset Rapidi (scrollabile orizzontalmente con frecce) -->
             <div class="relative mb-3">
             <div id="presetRow" class="flex gap-2 overflow-x-auto no-scrollbar pb-2">
-                <span class="flex items-center gap-1 shrink-0" data-preset-wrap>
+                <span class="shrink-0" data-preset-wrap>
                     <button data-preset="home_dumbbells" onclick="applyPreset('home_dumbbells')" class="px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-zinc-200 active:scale-95 transition">
-                        Kit Manubri + Bilanciere
+                        Kit Manubri + Bilanciere<span class="preset-del" title="Elimina preset" onclick="event.stopPropagation(); deletePreset('home_dumbbells')">✕</span>
                     </button>
-                    <button onclick="deletePreset('home_dumbbells')" title="Elimina preset" class="px-2 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-900/50 text-xs font-bold text-red-300 active:scale-95 transition">✕</button>
                 </span>
-                <span class="flex items-center gap-1 shrink-0" data-preset-wrap>
+                <span class="shrink-0" data-preset-wrap>
                     <button data-preset="home" onclick="applyPreset('home')" class="px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-zinc-200 active:scale-95 transition">
-                        Home Gym Base
+                        Home Gym Base<span class="preset-del" title="Elimina preset" onclick="event.stopPropagation(); deletePreset('home')">✕</span>
                     </button>
-                    <button onclick="deletePreset('home')" title="Elimina preset" class="px-2 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-900/50 text-xs font-bold text-red-300 active:scale-95 transition">✕</button>
                 </span>
-                <span class="flex items-center gap-1 shrink-0" data-preset-wrap>
+                <span class="shrink-0" data-preset-wrap>
                     <button data-preset="full" onclick="applyPreset('full')" class="px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-zinc-200 active:scale-95 transition">
-                        Palestra Completa
+                        Palestra Completa<span class="preset-del" title="Elimina preset" onclick="event.stopPropagation(); deletePreset('full')">✕</span>
                     </button>
-                    <button onclick="deletePreset('full')" title="Elimina preset" class="px-2 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-900/50 text-xs font-bold text-red-300 active:scale-95 transition">✕</button>
                 </span>
             </div>
             <button id="presetRowLeft" onclick="scrollPresetRow('presetRow', -1)" class="preset-scroll-btn left hidden">‹</button>
@@ -1144,11 +1149,10 @@
             });
             const cont = document.getElementById('userPresetRow');
             cont.innerHTML = Object.entries(appState.userPresetMeta).map(([id, name]) => `
-                <span class="flex items-center gap-1 shrink-0">
+                <span class="shrink-0">
                     <button data-preset="${id}" onclick="applyPreset('${id}')" class="px-3 py-1.5 rounded-xl bg-gym-elevated hover:bg-zinc-800 border border-gym-border text-xs font-bold text-zinc-200 active:scale-95 transition">
-                        ${escapeHtml(name)}
+                        ${escapeHtml(name)}<span class="preset-del" title="Elimina preset" onclick="event.stopPropagation(); deletePreset('${id}')">✕</span>
                     </button>
-                    <button onclick="deletePreset('${id}')" title="Elimina preset" class="px-2 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-900/50 text-xs font-bold text-red-300 active:scale-95 transition">✕</button>
                 </span>
             `).join('');
             // Evidenzia il preset attivo (dopo aver ricreato i pulsanti utente)
